@@ -1,0 +1,1 @@
+{"id":"mle_001","group_id":"mle_grp_1","source":"FOLIO","task_type":"deduction","premises":["If A then B.","If B then C.","If C then D.","A is true."],"hypothesis_or_query":"D is true.","formal_annotations":null,"proof_steps":null,"proof_trace_text":"Multi-step chain: A -> B -> C -> D.","label":"True","metadata":{}}

@@ -1,0 +1,32 @@
+[
+  {
+    "story_id": "story_fol_101",
+    "premises": [
+      "All students who study pass the exam.",
+      "Alex is a student.",
+      "Alex studies."
+    ],
+    "conclusion": "Alex passes the exam.",
+    "label": "True",
+    "premises_FOL": [
+      "\u2200x (Student(x) \u2227 Studies(x) \u2192 Passes(x))",
+      "Student(Alex)",
+      "Studies(Alex)"
+    ],
+    "explanation": "From Alex being a student who studies, by universal instantiation Alex passes."
+  },
+  {
+    "story_id": "story_fol_102",
+    "premises": [
+      "No mammal can breathe underwater.",
+      "Whales are mammals."
+    ],
+    "conclusion": "Whales can breathe underwater.",
+    "label": "False",
+    "premises_FOL": [
+      "\u2200x (Mammal(x) \u2192 \u00acBreathesUnderwater(x))",
+      "Mammal(Whale)"
+    ],
+    "explanation": "Universal negation implies whales cannot breathe underwater."
+  }
+]

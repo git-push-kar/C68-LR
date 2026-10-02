@@ -1,0 +1,24 @@
+[
+  {
+    "id": "pfolio_201",
+    "story_id": "pstory_201",
+    "premises": [
+      "Every prime number greater than 2 is odd.",
+      "3 is a prime number greater than 2."
+    ],
+    "conclusion": "3 is odd.",
+    "label": "True",
+    "proof_trace": "Rule 1: \u2200x (Prime(x) \u2227 x > 2 \u2192 Odd(x)). Fact 2: Prime(3) \u2227 3 > 2. Modus Ponens yields Odd(3)."
+  },
+  {
+    "id": "pfolio_202",
+    "story_id": "pstory_202",
+    "premises": [
+      "If it rains, the grass is wet.",
+      "The grass is wet."
+    ],
+    "conclusion": "It rained.",
+    "label": "Uncertain",
+    "proof_trace": "Affirming the consequent is a logical fallacy. The grass could be wet due to sprinklers."
+  }
+]

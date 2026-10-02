@@ -1,0 +1,17 @@
+[
+  {
+    "id": "abduct_301",
+    "rule_context_id": "ab_ctx_1",
+    "context_rules": [
+      "Faulty alternator causes battery drain.",
+      "Leaving headlights on causes battery drain."
+    ],
+    "observations": [
+      "Car battery is completely drained.",
+      "Headlight switch was verified in OFF position."
+    ],
+    "candidate_hypothesis": "The car has a faulty alternator.",
+    "plausibility": "True",
+    "abductive_chain": "Given headlights are off, the most plausible remaining cause for battery drain is a faulty alternator."
+  }
+]

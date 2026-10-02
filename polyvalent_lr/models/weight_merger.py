@@ -1,0 +1,94 @@
+import torch
+import numpy as np
+from pathlib import Path
+from typing import Dict, Any, Tuple
+from peft import PeftModel
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+
+class WeightMerger:
+    """Merges trained LR LoRA weights into InternVL3-2B base model and verifies numerical equivalence."""
+
+    @staticmethod
+    def merge_lora_and_save(
+        base_model_path: str,
+        adapter_path: str,
+        output_dir: str,
+        torch_dtype: torch.dtype = torch.bfloat16,
+        device_map: str = "cpu"
+    ) -> str:
+        """Fuses delta weights W_LR = W_base + (alpha/r) * B * A into a new standalone model checkpoint."""
+        print(f"[Merge] Loading base model from {base_model_path}...")
+        base_model = AutoModelForCausalLM.from_pretrained(
+            base_model_path,
+            torch_dtype=torch_dtype,
+            device_map=device_map,
+            trust_remote_code=True
+        )
+        tokenizer = AutoTokenizer.from_pretrained(base_model_path, trust_remote_code=True)
+
+        print(f"[Merge] Loading LR LoRA adapter from {adapter_path}...")
+        peft_model = PeftModel.from_pretrained(base_model, adapter_path)
+
+        print("[Merge] Merging LoRA layers into base model weights...")
+        # peft merge_and_unload computes W_effective = W + (alpha/r)*B*A
+        merged_model = peft_model.merge_and_unload()
+
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
+
+        print(f"[Merge] Saving merged InternVL3-2B-LR foundation to {output_path}...")
+        merged_model.save_pretrained(output_path, safe_serialization=True)
+        tokenizer.save_pretrained(output_path)
+
+        print("[Merge] Standalone foundation checkpoint saved successfully.")
+        return str(output_path)
+
+    @staticmethod
+    def verify_numerical_equivalence(
+        base_model_path: str,
+        adapter_path: str,
+        merged_model_path: str,
+        sample_prompt: str = "Premises:\n- Fact A is true.\nHypothesis:\nIs A true?\n",
+        tolerance: float = 1e-3
+    ) -> Dict[str, Any]:
+        """Tests that dynamic LoRA inference and merged checkpoint inference produce equivalent logits."""
+        print("[Equivalence Check] Loading dynamic base + LoRA model...")
+        tokenizer = AutoTokenizer.from_pretrained(base_model_path, trust_remote_code=True)
+        base = AutoModelForCausalLM.from_pretrained(
+            base_model_path,
+            torch_dtype=torch.float32,
+            device_map="cpu",
+            trust_remote_code=True
+        )
+        lora_model = PeftModel.from_pretrained(base, adapter_path)
+        lora_model.eval()
+
+        print("[Equivalence Check] Loading merged standalone model...")
+        merged_model = AutoModelForCausalLM.from_pretrained(
+            merged_model_path,
+            torch_dtype=torch.float32,
+            device_map="cpu",
+            trust_remote_code=True
+        )
+        merged_model.eval()
+
+        inputs = tokenizer(sample_prompt, return_tensors="pt")
+
+        with torch.no_grad():
+            logits_lora = lora_model(**inputs).logits
+            logits_merged = merged_model(**inputs).logits
+
+        diff = torch.abs(logits_lora - logits_merged)
+        max_diff = diff.max().item()
+        mean_diff = diff.mean().item()
+        is_equivalent = max_diff < tolerance
+
+        result = {
+            "max_absolute_difference": max_diff,
+            "mean_absolute_difference": mean_diff,
+            "tolerance": tolerance,
+            "is_equivalent": is_equivalent
+        }
+        print(f"[Equivalence Check] Max diff: {max_diff:.6f} | Mean diff: {mean_diff:.6f} | Passed: {is_equivalent}")
+        return result
