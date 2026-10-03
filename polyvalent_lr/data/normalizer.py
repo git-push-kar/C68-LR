@@ -306,3 +306,96 @@ class DatasetNormalizer:
             examples.append(ex)
 
         return examples
+
+    @classmethod
+    def normalize_logicbench(cls, item: Dict[str, Any], metadata: Optional[Dict[str, Any]] = None) -> LogicalExample:
+        """Normalizes official LogicBench(Eval) BQA/MCQA records."""
+        meta = metadata or {}
+        raw_id = item.get("id", item.get("question_id", "lb_unknown"))
+        pattern_id = item.get("pattern_id", item.get("pattern", "pattern_0"))
+        
+        context_str = item.get("context", item.get("premise", ""))
+        if isinstance(context_str, list):
+            premises = [p.strip() for p in context_str if p.strip()]
+        else:
+            premises = [p.strip() + "." for p in str(context_str).split(".") if p.strip()]
+
+        hypothesis = item.get("question", item.get("hypothesis", ""))
+        raw_label = item.get("answer", item.get("label", "True"))
+        
+        # In MCQA, append options to hypothesis if present
+        if "options" in item and isinstance(item["options"], (list, dict)):
+            options_str = "\nOptions:\n" + "\n".join(f"- {k if isinstance(item['options'], dict) else i+1}: {v}" for i, (k, v) in enumerate(item["options"].items() if isinstance(item["options"], dict) else enumerate(item["options"])))
+            hypothesis = f"{hypothesis}\n{options_str}"
+
+        return LogicalExample(
+            id=f"lb_{pattern_id}_{raw_id}",
+            group_id=f"lb_pattern_{pattern_id}",
+            source=DatasetSource.PROOFWRITER,  # placeholder benchmark source
+            task_type=LogicTaskType.DEDUCTION,
+            premises=premises,
+            hypothesis_or_query=hypothesis,
+            proof_trace_text=item.get("reasoning", item.get("proof", None)),
+            label=cls.normalize_label(raw_label),
+            metadata={"pattern_id": pattern_id, **meta}
+        )
+
+    @classmethod
+    def normalize_multi_logieval(cls, item: Dict[str, Any], metadata: Optional[Dict[str, Any]] = None) -> LogicalExample:
+        """Normalizes official Multi-LogiEval multi-depth rule records (d1_Data to d5_Data)."""
+        meta = metadata or {}
+        raw_id = item.get("id", "mle_unknown")
+        depth = meta.get("depth", item.get("depth", 1))
+        
+        context_str = item.get("context", item.get("premises", ""))
+        if isinstance(context_str, list):
+            premises = [p.strip() for p in context_str if p.strip()]
+        else:
+            premises = [p.strip() + "." for p in str(context_str).split(".") if p.strip()]
+
+        hypothesis = item.get("question", item.get("hypothesis", item.get("conclusion", "")))
+        raw_label = item.get("answer", item.get("label", "True"))
+
+        return LogicalExample(
+            id=f"mle_d{depth}_{raw_id}",
+            group_id=f"mle_depth_{depth}_{raw_id}",
+            source=DatasetSource.FOLIO,  # placeholder benchmark source
+            task_type=LogicTaskType.DEDUCTION,
+            premises=premises,
+            hypothesis_or_query=hypothesis,
+            proof_trace_text=item.get("reasoning", item.get("proof", None)),
+            label=cls.normalize_label(raw_label),
+            metadata={"depth": depth, **meta}
+        )
+
+    @classmethod
+    def normalize_logicnli(cls, item: Dict[str, Any], metadata: Optional[Dict[str, Any]] = None) -> LogicalExample:
+        """Normalizes official LogicNLI language/logic diagnostic test records."""
+        meta = metadata or {}
+        raw_id = item.get("id", "lnli_unknown")
+        group_id = item.get("group", raw_id)
+        
+        premise_str = item.get("premise", "")
+        if isinstance(premise_str, list):
+            premises = [p.strip() for p in premise_str if p.strip()]
+        else:
+            premises = [p.strip() + "." for p in str(premise_str).split(".") if p.strip()]
+
+        hypothesis = item.get("hypothesis", "")
+        raw_label = item.get("label", "neutral")
+        
+        # NLI standard mapping: entailment -> True, contradiction -> False, neutral -> Uncertain
+        normalized_label = cls.normalize_label(raw_label)
+
+        return LogicalExample(
+            id=f"lnli_{raw_id}",
+            group_id=f"lnli_grp_{group_id}",
+            source=DatasetSource.FOLIO,
+            task_type=LogicTaskType.DEDUCTION,
+            premises=premises,
+            hypothesis_or_query=hypothesis,
+            proof_trace_text=None,
+            label=normalized_label,
+            metadata={"variant": meta.get("variant", "language"), **meta}
+        )
+
