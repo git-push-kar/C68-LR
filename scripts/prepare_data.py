@@ -227,37 +227,104 @@ def main():
         print("[Data Prep] Raw data directory empty. Generating initial dataset scaffolds...")
         generate_starter_datasets(raw_path, bench_path)
 
-    # 1. Normalize ProofWriter
+    # 1. Normalize ProofWriter (supports single json or directory of meta-*.jsonl)
     pw_examples = []
-    pw_file = raw_path / "proofwriter_raw.json"
-    if pw_file.exists():
-        with open(pw_file, "r", encoding="utf-8") as f:
-            for item in json.load(f):
-                pw_examples.append(DatasetNormalizer.normalize_proofwriter(item))
+    pw_sources = list(raw_path.glob("**/proofwriter*.json*")) + list(raw_path.glob("**/meta-*.jsonl"))
+    for pw_f in set(pw_sources):
+        if "meta-abduct" in pw_f.name:
+            continue
+        try:
+            with open(pw_f, "r", encoding="utf-8") as f:
+                if pw_f.suffix == ".jsonl":
+                    for line in f:
+                        if line.strip():
+                            res = DatasetNormalizer.normalize_proofwriter(json.loads(line))
+                            if isinstance(res, list):
+                                pw_examples.extend(res)
+                            else:
+                                pw_examples.append(res)
+                else:
+                    data = json.load(f)
+                    items = data if isinstance(data, list) else [data]
+                    for item in items:
+                        res = DatasetNormalizer.normalize_proofwriter(item)
+                        if isinstance(res, list):
+                            pw_examples.extend(res)
+                        else:
+                            pw_examples.append(res)
+        except Exception as e:
+            print(f"[Warning] Error reading {pw_f}: {e}")
 
     # 2. Normalize FOLIO
     folio_examples = []
-    folio_file = raw_path / "folio_raw.json"
-    if folio_file.exists():
-        with open(folio_file, "r", encoding="utf-8") as f:
-            for item in json.load(f):
-                folio_examples.append(DatasetNormalizer.normalize_folio(item))
+    folio_sources = list(raw_path.glob("**/folio*.json*"))
+    for folio_f in set(folio_sources):
+        try:
+            with open(folio_f, "r", encoding="utf-8") as f:
+                if folio_f.suffix == ".jsonl":
+                    for line in f:
+                        if line.strip():
+                            folio_examples.append(DatasetNormalizer.normalize_folio(json.loads(line)))
+                else:
+                    data = json.load(f)
+                    items = data if isinstance(data, list) else [data]
+                    for item in items:
+                        folio_examples.append(DatasetNormalizer.normalize_folio(item))
+        except Exception as e:
+            print(f"[Warning] Error reading {folio_f}: {e}")
 
     # 3. Normalize P-FOLIO
     pfolio_examples = []
-    pfolio_file = raw_path / "pfolio_raw.json"
-    if pfolio_file.exists():
-        with open(pfolio_file, "r", encoding="utf-8") as f:
-            for item in json.load(f):
-                pfolio_examples.append(DatasetNormalizer.normalize_p_folio(item))
+    pfolio_sources = list(raw_path.glob("**/pfolio*.json*"))
+    for pfolio_f in set(pfolio_sources):
+        try:
+            with open(pfolio_f, "r", encoding="utf-8") as f:
+                if pfolio_f.suffix == ".jsonl":
+                    for line in f:
+                        if line.strip():
+                            pfolio_examples.append(DatasetNormalizer.normalize_p_folio(json.loads(line)))
+                else:
+                    data = json.load(f)
+                    items = data if isinstance(data, list) else [data]
+                    for item in items:
+                        pfolio_examples.append(DatasetNormalizer.normalize_p_folio(item))
+        except Exception as e:
+            print(f"[Warning] Error reading {pfolio_f}: {e}")
 
-    # 4. Normalize AbductionRules
+    # 4. Normalize Abduction (AbductionRules + ProofWriter meta-abduct-*.jsonl)
     abduct_examples = []
-    abduct_file = raw_path / "abduction_raw.json"
-    if abduct_file.exists():
-        with open(abduct_file, "r", encoding="utf-8") as f:
-            for item in json.load(f):
-                abduct_examples.append(DatasetNormalizer.normalize_abduction_rules(item))
+    abduct_dir = raw_path / "abduction_rules_dataset"
+    abduct_sources = (
+        list(raw_path.glob("**/abduction*.json*"))
+        + list(raw_path.glob("**/meta-abduct*.jsonl"))
+        + (list(abduct_dir.glob("**/*.jsonl")) if abduct_dir.exists() else [])
+    )
+    for abduct_f in set(abduct_sources):
+        try:
+            with open(abduct_f, "r", encoding="utf-8") as f:
+                if "meta-abduct" in abduct_f.name:
+                    for line in f:
+                        if line.strip():
+                            abduct_examples.extend(DatasetNormalizer.normalize_proofwriter_abduct(json.loads(line)))
+                elif abduct_f.suffix == ".jsonl":
+                    for line in f:
+                        if line.strip():
+                            res = DatasetNormalizer.normalize_abduction_rules(json.loads(line))
+                            if isinstance(res, list):
+                                abduct_examples.extend(res)
+                            else:
+                                abduct_examples.append(res)
+                else:
+                    data = json.load(f)
+                    items = data if isinstance(data, list) else [data]
+                    for item in items:
+                        res = DatasetNormalizer.normalize_abduction_rules(item)
+                        if isinstance(res, list):
+                            abduct_examples.extend(res)
+                        else:
+                            abduct_examples.append(res)
+        except Exception as e:
+            print(f"[Warning] Error reading {abduct_f}: {e}")
 
     # Check FOLIO vs P-FOLIO overlap
     overlap_report = GroupAwareDataSplitter.check_folio_pfolio_overlap(folio_examples, pfolio_examples)

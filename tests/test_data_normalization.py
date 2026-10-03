@@ -16,23 +16,49 @@ def test_label_normalization():
 
 
 def test_proofwriter_normalization():
+    # Official ProofWriter nested format
     raw_item = {
-        "id": "pw_test_1",
-        "theory_id": "theory_10",
-        "theory": "If someone is smart, they read books. Alice is smart.",
-        "question": "Alice reads books.",
-        "answer": "True",
-        "proof": "Alice is smart -> Alice reads books"
+        "id": "RelNeg-OWA-D2-1717",
+        "maxD": 2,
+        "theory": "The cow is big. If something is big then it chases the dog.",
+        "triples": {
+            "triple1": {"text": "The cow is big.", "representation": "(\"cow\" \"is\" \"big\" \"+\")"}
+        },
+        "rules": {
+            "rule3": {"text": "If something is big then it chases the dog.", "representation": "..."}
+        },
+        "questions": {
+            "Q1": {
+                "question": "The cow is big.",
+                "answer": True,
+                "QDep": 0,
+                "strategy": "proof",
+                "proofsWithIntermediates": [{"representation": "triple1", "intermediates": []}]
+            },
+            "Q7": {
+                "question": "The dog does not chase the dog.",
+                "answer": "Unknown",
+                "QDep": 1,
+                "strategy": "inv-rconc"
+            }
+        }
     }
-    example = DatasetNormalizer.normalize_proofwriter(raw_item)
-    assert example.id == "pw_pw_test_1"
-    assert example.group_id == "pw_group_theory_10"
-    assert example.source == DatasetSource.PROOFWRITER
-    assert example.task_type == LogicTaskType.DEDUCTION
-    assert len(example.premises) == 2
-    assert example.label == "True"
-    assert example.proof_steps is not None
-    assert len(example.proof_steps) == 1
+    examples = DatasetNormalizer.normalize_proofwriter(raw_item)
+    assert len(examples) == 2
+    
+    # Check Q1
+    q1_ex = next(e for e in examples if e.metadata["question_id"] == "Q1")
+    assert q1_ex.id == "pw_RelNeg-OWA-D2-1717_Q1"
+    assert q1_ex.group_id == "pw_theory_RelNeg-OWA-D2-1717"
+    assert q1_ex.label == "True"
+    assert "The cow is big." in q1_ex.premises
+    assert "If something is big then it chases the dog." in q1_ex.premises
+    
+    # Check Q7
+    q7_ex = next(e for e in examples if e.metadata["question_id"] == "Q7")
+    assert q7_ex.label == "Uncertain"
+    assert q7_ex.group_id == "pw_theory_RelNeg-OWA-D2-1717"
+
 
 
 def test_instruction_formatting():
