@@ -29,11 +29,12 @@ This module implements the complete Logical Reasoning pipeline for **InternVL3-2
 
 ## 🚀 Quickstart & Execution Steps
 
-### 1. Data Ingestion & Splitting
-Prepares normalized data splits and sets up quarantined benchmarks:
+### 1. All-in-One Continuous Dataset Setup (Cross-Platform)
+Run this single command on **any device** (Linux, macOS, Windows) to download, extract, normalize, and partition all datasets:
 ```bash
-python scripts/prepare_data.py --raw_dir data/raw --processed_dir data/processed --val_ratio 0.1
+python scripts/setup_and_prepare_data.py
 ```
+*(Or via chained CLI commands: `python scripts/download_real_datasets.py && python scripts/prepare_data.py`)*
 
 ### 2. Run Staged Curriculum LoRA Training
 Trains the LR LoRA adapter across the staged curriculum on `InternVL3-2B`:

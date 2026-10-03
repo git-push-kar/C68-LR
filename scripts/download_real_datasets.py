@@ -47,7 +47,54 @@ def fetch_folio(raw_dir: Path):
     if items:
         with open(dest_file, "w", encoding="utf-8") as f:
             json.dump(items, f, indent=2)
-        print(f"[FOLIO Success] Saved {len(items)} official FOLIO examples to {dest_file}")
+import zipfile
+
+
+def fetch_proofwriter(raw_dir: Path, max_depth_download: str = "depth-3"):
+    """Downloads and extracts the official AllenAI ProofWriter dataset release."""
+    pw_dir = raw_dir / "proofwriter"
+    pw_dir.mkdir(parents=True, exist_ok=True)
+    
+    zip_url = "https://aristo-data-public.s3.amazonaws.com/proofwriter/proofwriter-dataset-V2020.12.3.zip"
+    zip_path = raw_dir / "proofwriter_temp.zip"
+
+    print(f"[ProofWriter] Downloading official AI2 archive from {zip_url}...")
+    if download_url(zip_url, zip_path):
+        try:
+            print(f"[ProofWriter] Extracting files into {pw_dir}...")
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                zip_ref.extractall(pw_dir)
+            print(f"[ProofWriter Success] Archive extracted to {pw_dir}")
+        except Exception as e:
+            print(f"[ProofWriter Error] Failed to extract zip: {e}")
+        finally:
+            if zip_path.exists():
+                zip_path.unlink()
+
+
+def fetch_abduction_rules(raw_dir: Path):
+    """Downloads and extracts the official AbductionRules dataset used by LogiTorch."""
+    abduct_dir = raw_dir / "abduction_rules_dataset"
+    if abduct_dir.exists() and any(abduct_dir.iterdir()):
+        print(f"[AbductionRules] Found existing directory at {abduct_dir}")
+        return
+
+    abduct_dir.mkdir(parents=True, exist_ok=True)
+    zip_url = "https://www.dropbox.com/s/zvm2v3noak0wt5f/abduction_rules_dataset.zip?dl=1"
+    zip_path = raw_dir / "abduction_rules_temp.zip"
+
+    print(f"[AbductionRules] Downloading dataset from {zip_url}...")
+    if download_url(zip_url, zip_path):
+        try:
+            print(f"[AbductionRules] Extracting archive into {abduct_dir}...")
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                zip_ref.extractall(abduct_dir)
+            print(f"[AbductionRules Success] Extracted to {abduct_dir}")
+        except Exception as e:
+            print(f"[AbductionRules Error] Failed to extract zip: {e}")
+        finally:
+            if zip_path.exists():
+                zip_path.unlink()
 
 
 def main():
@@ -58,7 +105,10 @@ def main():
     print("Downloading Official Datasets & Benchmarks")
     print("=" * 60)
     fetch_folio(raw_dir)
+    fetch_abduction_rules(raw_dir)
 
 
 if __name__ == "__main__":
     main()
+
+
