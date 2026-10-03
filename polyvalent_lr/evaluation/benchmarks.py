@@ -51,10 +51,11 @@ class UnseenBenchmarkEvaluator:
         model.eval()
         results = []
 
-        print(f"[Benchmark Eval] Evaluating {len(examples)} examples on {benchmark_name.value}...")
+        eval_device = getattr(model, "device", torch.device(device))
+        print(f"[Benchmark Eval] Evaluating {len(examples)} examples on {benchmark_name.value} (Device: {eval_device})...")
         for ex in tqdm(examples, desc=f"Eval {benchmark_name.value}"):
             prompt = ex.to_instruction_prompt()
-            inputs = tokenizer(prompt, return_tensors="pt").to(device)
+            inputs = tokenizer(prompt, return_tensors="pt").to(eval_device)
 
             with torch.no_grad():
                 gen_tokens = model.generate(

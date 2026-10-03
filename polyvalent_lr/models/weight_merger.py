@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 from pathlib import Path
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, Optional
 from peft import PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -14,11 +14,19 @@ class WeightMerger:
         base_model_path: str,
         adapter_path: str,
         output_dir: str,
-        torch_dtype: torch.dtype = torch.bfloat16,
-        device_map: str = "cpu"
+        torch_dtype: Optional[torch.dtype] = None,
+        device_map: Optional[str] = None
     ) -> str:
         """Fuses delta weights W_LR = W_base + (alpha/r) * B * A into a new standalone model checkpoint."""
-        print(f"[Merge] Loading base model from {base_model_path}...")
+        if device_map is None:
+            device_map = "auto" if torch.cuda.is_available() else "cpu"
+        if torch_dtype is None:
+            if torch.cuda.is_available():
+                torch_dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+            else:
+                torch_dtype = torch.float32
+
+        print(f"[Merge] Loading base model from {base_model_path} on device_map='{device_map}' (dtype={torch_dtype})...")
         base_model = AutoModelForCausalLM.from_pretrained(
             base_model_path,
             torch_dtype=torch_dtype,
@@ -50,30 +58,44 @@ class WeightMerger:
         adapter_path: str,
         merged_model_path: str,
         sample_prompt: str = "Premises:\n- Fact A is true.\nHypothesis:\nIs A true?\n",
+        device: Optional[str] = None,
+        torch_dtype: Optional[torch.dtype] = None,
         tolerance: float = 1e-3
     ) -> Dict[str, Any]:
         """Tests that dynamic LoRA inference and merged checkpoint inference produce equivalent logits."""
-        print("[Equivalence Check] Loading dynamic base + LoRA model...")
+        if device is None:
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+        if torch_dtype is None:
+            if device == "cuda" and torch.cuda.is_available():
+                torch_dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+            else:
+                torch_dtype = torch.float32
+
+        device_map = "auto" if device == "cuda" else "cpu"
+
+        print(f"[Equivalence Check] Loading dynamic base + LoRA model on {device} ({torch_dtype})...")
         tokenizer = AutoTokenizer.from_pretrained(base_model_path, trust_remote_code=True)
         base = AutoModelForCausalLM.from_pretrained(
             base_model_path,
-            torch_dtype=torch.float32,
-            device_map="cpu",
+            torch_dtype=torch_dtype,
+            device_map=device_map,
             trust_remote_code=True
         )
         lora_model = PeftModel.from_pretrained(base, adapter_path)
         lora_model.eval()
 
-        print("[Equivalence Check] Loading merged standalone model...")
+        print(f"[Equivalence Check] Loading merged standalone model on {device} ({torch_dtype})...")
         merged_model = AutoModelForCausalLM.from_pretrained(
             merged_model_path,
-            torch_dtype=torch.float32,
-            device_map="cpu",
+            torch_dtype=torch_dtype,
+            device_map=device_map,
             trust_remote_code=True
         )
         merged_model.eval()
 
         inputs = tokenizer(sample_prompt, return_tensors="pt")
+        if device == "cuda" and torch.cuda.is_available():
+            inputs = {k: v.to("cuda") for k, v in inputs.items()}
 
         with torch.no_grad():
             logits_lora = lora_model(**inputs).logits
@@ -88,7 +110,9 @@ class WeightMerger:
             "max_absolute_difference": max_diff,
             "mean_absolute_difference": mean_diff,
             "tolerance": tolerance,
-            "is_equivalent": is_equivalent
+            "is_equivalent": is_equivalent,
+            "device": device,
+            "torch_dtype": str(torch_dtype)
         }
         print(f"[Equivalence Check] Max diff: {max_diff:.6f} | Mean diff: {mean_diff:.6f} | Passed: {is_equivalent}")
         return result

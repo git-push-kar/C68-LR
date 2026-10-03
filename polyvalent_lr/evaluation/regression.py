@@ -19,10 +19,11 @@ class GeneralRegressionSuite:
         ]
 
         model.eval()
+        eval_device = getattr(model, "device", torch.device(device))
         responses = []
         for p in probe_prompts:
             prompt_fmt = f"<|im_start|>user\n{p}<|im_end|>\n<|im_start|>assistant\n"
-            inputs = tokenizer(prompt_fmt, return_tensors="pt").to(device)
+            inputs = tokenizer(prompt_fmt, return_tensors="pt").to(eval_device)
 
             with torch.no_grad():
                 gen_tokens = model.generate(

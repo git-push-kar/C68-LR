@@ -23,6 +23,13 @@ class StagedCurriculumTrainer:
         print(f"Description: {stage_config.description}")
         print(f"Datasets: {[d.value for d in stage_config.datasets]}")
 
+        # Check model device placement
+        try:
+            primary_device = next(self.model.parameters()).device
+            print(f"[Device Placement] Model parameter tensor device: {primary_device}")
+        except Exception:
+            primary_device = "unknown"
+
         train_examples, val_examples = self.curriculum_manager.load_stage_data(stage_config)
         print(f"Loaded {len(train_examples)} train examples, {len(val_examples)} validation examples.")
 
@@ -36,21 +43,29 @@ class StagedCurriculumTrainer:
         stage_output_dir = Path(self.config.output_dir) / f"stage_{stage_config.stage_id}_{stage_config.name}"
         stage_output_dir.mkdir(parents=True, exist_ok=True)
 
-        training_args = TrainingArguments(
-            output_dir=str(stage_output_dir),
-            num_train_epochs=stage_config.epochs,
-            per_device_train_batch_size=stage_config.batch_size,
-            gradient_accumulation_steps=stage_config.gradient_accumulation_steps,
-            learning_rate=stage_config.learning_rate,
-            warmup_ratio=stage_config.warmup_ratio,
-            logging_steps=10,
-            save_strategy="epoch",
-            evaluation_strategy="epoch" if val_dataset else "no",
-            fp16=torch.cuda.is_available(),
-            save_total_limit=2,
-            remove_unused_columns=False,
-            report_to="none"
-        )
+        use_cuda = torch.cuda.is_available()
+        use_bf16 = use_cuda and torch.cuda.is_bf16_supported()
+        use_fp16 = use_cuda and not use_bf16
+
+        training_args_dict = {
+            "output_dir": str(stage_output_dir),
+            "num_train_epochs": stage_config.epochs,
+            "per_device_train_batch_size": stage_config.batch_size,
+            "gradient_accumulation_steps": stage_config.gradient_accumulation_steps,
+            "learning_rate": stage_config.learning_rate,
+            "warmup_ratio": stage_config.warmup_ratio,
+            "logging_steps": 10,
+            "save_strategy": "epoch",
+            "eval_strategy" if hasattr(TrainingArguments, "eval_strategy") else "evaluation_strategy": "epoch" if val_dataset else "no",
+            "bf16": use_bf16,
+            "fp16": use_fp16,
+            "dataloader_pin_memory": use_cuda,
+            "save_total_limit": 2,
+            "remove_unused_columns": False,
+            "report_to": "none"
+        }
+
+        training_args = TrainingArguments(**training_args_dict)
 
         collator = LogicalDataCollator(tokenizer=self.tokenizer)
 
