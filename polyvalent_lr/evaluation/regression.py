@@ -1,5 +1,6 @@
 from typing import Dict, Any, List
 import torch
+from polyvalent_lr.models.loader import ensure_internvl_tokens_configured
 
 
 class GeneralRegressionSuite:
@@ -19,6 +20,7 @@ class GeneralRegressionSuite:
         ]
 
         model.eval()
+        ensure_internvl_tokens_configured(model, tokenizer)
         eval_device = getattr(model, "device", torch.device(device))
         responses = []
         for p in probe_prompts:

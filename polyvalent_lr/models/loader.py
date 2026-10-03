@@ -40,6 +40,26 @@ def _apply_tied_weights_patch():
 _apply_tied_weights_patch()
 
 
+def ensure_internvl_tokens_configured(model: Any, tokenizer: Any) -> None:
+    """Configures special vision-language token IDs (img_context_token_id) on InternVL models."""
+    img_context_token_id = tokenizer.convert_tokens_to_ids('<IMG_CONTEXT>')
+    if img_context_token_id is None or (isinstance(img_context_token_id, int) and img_context_token_id < 0):
+        img_context_token_id = tokenizer.get_vocab().get('<IMG_CONTEXT>', getattr(tokenizer, "eos_token_id", 0))
+
+    # Assign to model and any underlying submodules across PEFT wrappers
+    for obj in [
+        model,
+        getattr(model, "base_model", None),
+        getattr(getattr(model, "base_model", None), "model", None),
+        getattr(model, "model", None)
+    ]:
+        if obj is not None:
+            try:
+                setattr(obj, "img_context_token_id", img_context_token_id)
+            except Exception:
+                pass
+
+
 def load_internvl_model_and_tokenizer(
     model_name_or_path: str,
     device: Optional[str] = None,
@@ -49,7 +69,7 @@ def load_internvl_model_and_tokenizer(
     is_eval: bool = False
 ) -> Tuple[Any, Any]:
     """
-    Robustly loads InternVL model and tokenizer with GPU acceleration and version compatibility.
+    Robustly loads InternVL model and tokenizer with GPU acceleration, token setup, and version compatibility.
     """
     cuda_avail = torch.cuda.is_available()
 
@@ -103,6 +123,9 @@ def load_internvl_model_and_tokenizer(
     # Ensure model has all_tied_weights_keys attribute if accessed directly
     if not hasattr(model, "all_tied_weights_keys"):
         model.all_tied_weights_keys = getattr(model, "_tied_weights_keys", {})
+
+    # Configure img_context_token_id so generate() does not fail assertion
+    ensure_internvl_tokens_configured(model, tokenizer)
 
     if is_eval:
         model = model.eval()

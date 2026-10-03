@@ -3,12 +3,13 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 from tqdm import tqdm
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModel, AutoTokenizer
 from peft import PeftModel
 
 from polyvalent_lr.config import UnseenBenchmark, EvaluationConfig
 from polyvalent_lr.data.schema import LogicalExample
 from polyvalent_lr.evaluation.metrics import ReasoningMetrics
+from polyvalent_lr.models.loader import ensure_internvl_tokens_configured
 
 
 class UnseenBenchmarkEvaluator:
@@ -49,6 +50,7 @@ class UnseenBenchmarkEvaluator:
             return {"error": f"No examples loaded for {benchmark_name.value}"}
 
         model.eval()
+        ensure_internvl_tokens_configured(model, tokenizer)
         results = []
 
         eval_device = getattr(model, "device", torch.device(device))
