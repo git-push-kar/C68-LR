@@ -4,7 +4,7 @@ torchvision>=0.15.0
 accelerate>=0.28.0
 
 # Transformer & Model Architectures (InternVL & Multimodal Support)
-transformers>=4.40.0
+transformers>=4.40.0,<4.48.0
 peft>=0.10.0
 timm>=0.9.0
 einops>=0.7.0

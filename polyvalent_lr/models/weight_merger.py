@@ -3,7 +3,8 @@ import numpy as np
 from pathlib import Path
 from typing import Dict, Any, Tuple, Optional
 from peft import PeftModel
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModel, AutoModelForCausalLM, AutoTokenizer
+from polyvalent_lr.models.loader import load_internvl_model_and_tokenizer
 
 
 class WeightMerger:
@@ -18,22 +19,14 @@ class WeightMerger:
         device_map: Optional[str] = None
     ) -> str:
         """Fuses delta weights W_LR = W_base + (alpha/r) * B * A into a new standalone model checkpoint."""
-        if device_map is None:
-            device_map = "auto" if torch.cuda.is_available() else "cpu"
-        if torch_dtype is None:
-            if torch.cuda.is_available():
-                torch_dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
-            else:
-                torch_dtype = torch.float32
-
-        print(f"[Merge] Loading base model from {base_model_path} on device_map='{device_map}' (dtype={torch_dtype})...")
-        base_model = AutoModelForCausalLM.from_pretrained(
-            base_model_path,
-            torch_dtype=torch_dtype,
+        print(f"[Merge] Loading base model from {base_model_path}...")
+        base_model, tokenizer = load_internvl_model_and_tokenizer(
+            model_name_or_path=base_model_path,
             device_map=device_map,
-            trust_remote_code=True
+            torch_dtype=torch_dtype,
+            trust_remote_code=True,
+            is_eval=True
         )
-        tokenizer = AutoTokenizer.from_pretrained(base_model_path, trust_remote_code=True)
 
         print(f"[Merge] Loading LR LoRA adapter from {adapter_path}...")
         peft_model = PeftModel.from_pretrained(base_model, adapter_path)
@@ -71,31 +64,30 @@ class WeightMerger:
             else:
                 torch_dtype = torch.float32
 
-        device_map = "auto" if device == "cuda" else "cpu"
-
         print(f"[Equivalence Check] Loading dynamic base + LoRA model on {device} ({torch_dtype})...")
-        tokenizer = AutoTokenizer.from_pretrained(base_model_path, trust_remote_code=True)
-        base = AutoModelForCausalLM.from_pretrained(
-            base_model_path,
+        base, tokenizer = load_internvl_model_and_tokenizer(
+            model_name_or_path=base_model_path,
+            device=device,
             torch_dtype=torch_dtype,
-            device_map=device_map,
-            trust_remote_code=True
+            trust_remote_code=True,
+            is_eval=True
         )
         lora_model = PeftModel.from_pretrained(base, adapter_path)
         lora_model.eval()
 
         print(f"[Equivalence Check] Loading merged standalone model on {device} ({torch_dtype})...")
-        merged_model = AutoModelForCausalLM.from_pretrained(
-            merged_model_path,
+        merged_model, _ = load_internvl_model_and_tokenizer(
+            model_name_or_path=merged_model_path,
+            device=device,
             torch_dtype=torch_dtype,
-            device_map=device_map,
-            trust_remote_code=True
+            trust_remote_code=True,
+            is_eval=True
         )
         merged_model.eval()
 
         inputs = tokenizer(sample_prompt, return_tensors="pt")
-        if device == "cuda" and torch.cuda.is_available():
-            inputs = {k: v.to("cuda") for k, v in inputs.items()}
+        target_device = getattr(base, "device", torch.device(device))
+        inputs = {k: v.to(target_device) for k, v in inputs.items()}
 
         with torch.no_grad():
             logits_lora = lora_model(**inputs).logits
@@ -111,7 +103,7 @@ class WeightMerger:
             "mean_absolute_difference": mean_diff,
             "tolerance": tolerance,
             "is_equivalent": is_equivalent,
-            "device": device,
+            "device": str(target_device),
             "torch_dtype": str(torch_dtype)
         }
         print(f"[Equivalence Check] Max diff: {max_diff:.6f} | Mean diff: {mean_diff:.6f} | Passed: {is_equivalent}")

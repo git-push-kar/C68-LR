@@ -1,8 +1,9 @@
 import torch
 from typing import Dict, Any, Tuple, Optional
 from peft import LoraConfig, get_peft_model, TaskType, PeftModel
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModel, AutoModelForCausalLM, AutoTokenizer
 from polyvalent_lr.config import LoRAConfig
+from polyvalent_lr.models.loader import load_internvl_model_and_tokenizer
 
 
 def create_peft_config(config: LoRAConfig) -> LoraConfig:
@@ -20,38 +21,20 @@ def create_peft_config(config: LoRAConfig) -> LoraConfig:
 def setup_internvl_lr_lora(
     model_name_or_path: str,
     lora_config: LoRAConfig,
+    device: Optional[str] = None,
     device_map: Optional[str] = None,
     torch_dtype: Optional[torch.dtype] = None,
     gradient_checkpointing: bool = True
 ) -> Tuple[Any, Any]:
     """Loads InternVL3-2B language backbone and attaches LR LoRA adapters with GPU acceleration."""
-    if device_map is None:
-        device_map = "auto" if torch.cuda.is_available() else "cpu"
-
-    if torch_dtype is None:
-        if torch.cuda.is_available():
-            torch_dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
-        else:
-            torch_dtype = torch.float32
-
-    # Hardware & placement diagnosis
-    cuda_avail = torch.cuda.is_available()
-    device_name = torch.cuda.get_device_name(0) if cuda_avail else "CPU"
-    vram_gb = (torch.cuda.get_device_properties(0).total_memory / (1024**3)) if cuda_avail else 0.0
-
-    print(f"\n{'='*60}")
-    print(f"[LoRA Setup] Target Device: {device_name} | CUDA: {cuda_avail} | VRAM: {vram_gb:.2f} GB")
-    print(f"[LoRA Setup] Model: {model_name_or_path} | Precision: {torch_dtype} | device_map: '{device_map}'")
-    print(f"{'='*60}")
-
-    tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, trust_remote_code=True)
-    
-    # Load model
-    model = AutoModelForCausalLM.from_pretrained(
-        model_name_or_path,
-        torch_dtype=torch_dtype,
+    # Load base model using unified, version-compatible loader
+    model, tokenizer = load_internvl_model_and_tokenizer(
+        model_name_or_path=model_name_or_path,
+        device=device,
         device_map=device_map,
+        torch_dtype=torch_dtype,
         trust_remote_code=True,
+        is_eval=False
     )
 
     if gradient_checkpointing and hasattr(model, "gradient_checkpointing_enable"):
