@@ -41,7 +41,7 @@ datasets/
 *.rar
 
 # Keep benchmark folder tracked if needed
-!data/benchmarks/
+data/benchmarks/
 
 # Model Checkpoints & Adapters
 checkpoints/
