@@ -1,5 +1,5 @@
 import re
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from polyvalent_lr.config import DatasetSource, LogicTaskType
 from polyvalent_lr.data.schema import LogicalExample, ProofStep
 
