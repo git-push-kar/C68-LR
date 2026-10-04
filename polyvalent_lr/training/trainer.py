@@ -9,13 +9,19 @@ from polyvalent_lr.training.collator import LogicalDataCollator
 
 
 class StagedCurriculumTrainer:
-    """Orchestrates staged curriculum LoRA training for the Polyvalent LR module."""
+    """Orchestrates high-throughput staged curriculum LoRA training for the Polyvalent LR module."""
 
     def __init__(self, config: LRModuleConfig, model: Any, tokenizer: Any):
         self.config = config
         self.model = model
         self.tokenizer = tokenizer
         self.curriculum_manager = CurriculumManager(config.data.processed_data_dir)
+
+        # Enable Ampere Tensor Core hardware acceleration (TF32)
+        if torch.cuda.is_available():
+            torch.backends.cuda.matmul.allow_tf32 = True
+            torch.backends.cudnn.allow_tf32 = True
+            torch.backends.cudnn.benchmark = True
 
     def train_stage(self, stage_config: CurriculumStageConfig) -> Dict[str, Any]:
         """Executes fine-tuning for a single curriculum stage."""
@@ -69,8 +75,10 @@ class StagedCurriculumTrainer:
             "eval_strategy" if hasattr(TrainingArguments, "eval_strategy") else "evaluation_strategy": "epoch" if val_dataset else "no",
             "bf16": use_bf16,
             "fp16": use_fp16,
+            "tf32": use_cuda,
+            "group_by_length": True,
             "dataloader_pin_memory": use_cuda,
-            "dataloader_num_workers": 2 if use_cuda else 0,
+            "dataloader_num_workers": 0,  # Zero-IPC overhead on Windows with in-memory pre-tokenized tensors
             "optim": "adamw_torch_fused" if use_cuda else "adamw_torch",
             "save_total_limit": 2,
             "remove_unused_columns": False,

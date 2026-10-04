@@ -17,14 +17,16 @@ class LogicalReasoningDataset(Dataset):
         self.max_length = max_length
         self.cached_features = None
 
-        if self.tokenizer is not None and pre_tokenize and len(examples) > 0:
+        # Pre-tokenize in memory if dataset is under 150k samples for instant loading;
+        # For larger sets, tokenize on-the-fly with multi-worker pre-fetching.
+        if self.tokenizer is not None and pre_tokenize and 0 < len(examples) <= 150000:
             self._pre_tokenize_all()
 
     def _pre_tokenize_all(self):
         """Pre-tokenizes all examples in memory to eliminate DataLoader tokenization bottlenecks."""
-        print(f"[Dataset] Pre-tokenizing {len(self.examples)} examples (max_length={self.max_length})...")
+        print(f"[Dataset] Pre-tokenizing {len(self.examples):,} examples (max_length={self.max_length})...")
         self.cached_features = []
-        for ex in self.examples:
+        for ex in tqdm(self.examples, desc="Pre-tokenizing"):
             prompt = ex.to_instruction_prompt()
             target = ex.to_target_text()
             full_text = prompt + target
@@ -51,7 +53,7 @@ class LogicalReasoningDataset(Dataset):
                 "labels": labels,
                 "example_id": ex.id
             })
-        print(f"[Dataset] Pre-tokenization complete for {len(self.cached_features)} items.")
+        print(f"[Dataset] Pre-tokenization complete for {len(self.cached_features):,} items.")
 
     def __len__(self) -> int:
         return len(self.examples)
@@ -122,19 +124,22 @@ class CurriculumManager:
                         if line.strip():
                             val_examples.append(LogicalExample(**json.loads(line)))
 
-        # Subsample training data if max_train_samples is set
-        if stage_config.max_train_samples and len(train_examples) > stage_config.max_train_samples:
-            # Deterministic balanced stride sampling to maintain distribution across rules and depths
+        # Subsample training data if max_train_samples is set and > 0
+        if stage_config.max_train_samples and stage_config.max_train_samples > 0 and len(train_examples) > stage_config.max_train_samples:
             stride = len(train_examples) / stage_config.max_train_samples
             sampled_indices = [int(i * stride) for i in range(stage_config.max_train_samples)]
             print(f"[CurriculumManager] Sampling {stage_config.max_train_samples:,} representative examples from {len(train_examples):,} total.")
             train_examples = [train_examples[i] for i in sampled_indices]
+        else:
+            print(f"[CurriculumManager] Training on 100% full dataset: {len(train_examples):,} examples.")
 
         # Subsample validation data for fast evaluation
-        if stage_config.max_val_samples and len(val_examples) > stage_config.max_val_samples:
+        if stage_config.max_val_samples and stage_config.max_val_samples > 0 and len(val_examples) > stage_config.max_val_samples:
             stride = len(val_examples) / stage_config.max_val_samples
             sampled_val_indices = [int(i * stride) for i in range(stage_config.max_val_samples)]
             print(f"[CurriculumManager] Sampling {stage_config.max_val_samples:,} validation examples from {len(val_examples):,} total.")
             val_examples = [val_examples[i] for i in sampled_val_indices]
+        else:
+            print(f"[CurriculumManager] Full validation dataset: {len(val_examples):,} examples.")
 
         return train_examples, val_examples

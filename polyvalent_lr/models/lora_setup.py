@@ -24,7 +24,7 @@ def setup_internvl_lr_lora(
     device: Optional[str] = None,
     device_map: Optional[str] = None,
     torch_dtype: Optional[torch.dtype] = None,
-    gradient_checkpointing: bool = True
+    gradient_checkpointing: bool = False
 ) -> Tuple[Any, Any]:
     """Loads InternVL3-2B language backbone and attaches LR LoRA adapters with GPU acceleration."""
     # Load base model using unified, version-compatible loader
@@ -45,6 +45,8 @@ def setup_internvl_lr_lora(
         if hasattr(model.config, "use_cache"):
             model.config.use_cache = False
         print("[LoRA Setup] Enabled gradient checkpointing for VRAM efficiency.")
+    else:
+        print("[LoRA Setup] Gradient checkpointing disabled (Full GPU throughput active on 24GB VRAM).")
 
     # Freeze all base parameters (including vision encoder)
     for param in model.parameters():
