@@ -109,6 +109,16 @@ def ensure_internvl_tokens_configured(model: Any, tokenizer: Any) -> None:
                 pass
 
 
+def _remove_accelerate_hooks(model: Any) -> None:
+    """Removes any accelerate dispatch hooks (AlignDevicesHook) to allow high-throughput GPU training."""
+    try:
+        from accelerate.hooks import remove_hook_from_module
+        for module in model.modules():
+            remove_hook_from_module(module, recurse=False)
+    except Exception:
+        pass
+
+
 def load_internvl_model_and_tokenizer(
     model_name_or_path: str,
     device: Optional[str] = None,
@@ -125,7 +135,8 @@ def load_internvl_model_and_tokenizer(
     if device is None:
         device = "cuda" if cuda_avail else "cpu"
 
-    if device_map is None:
+    # For evaluation, device_map="auto" is convenient; for training, device_map=None avoids Accelerate hook overhead
+    if device_map is None and is_eval:
         device_map = "auto" if cuda_avail else "cpu"
 
     if torch_dtype is None:
@@ -141,33 +152,40 @@ def load_internvl_model_and_tokenizer(
         device_name = torch.cuda.get_device_name(0)
         vram_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
         print(f"[InternVL Loader] Hardware: CUDA GPU ({device_name}) | Total VRAM: {vram_gb:.2f} GB")
-        print(f"[InternVL Loader] Precision: {torch_dtype} | device_map: '{device_map}'")
+        print(f"[InternVL Loader] Precision: {torch_dtype} | device_map: {repr(device_map)} | target_device: '{device}'")
     else:
         print("[InternVL Loader] WARNING: CUDA is NOT available in this PyTorch environment!")
         print("[InternVL Loader] Falling back to CPU. (To enable GPU, reinstall PyTorch with CUDA support).")
-        print(f"[InternVL Loader] Precision: {torch_dtype} | device_map: '{device_map}'")
+        print(f"[InternVL Loader] Precision: {torch_dtype} | device_map: {repr(device_map)}")
     print("=" * 60)
 
     tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, trust_remote_code=trust_remote_code)
+
+    model_kwargs = {
+        "torch_dtype": torch_dtype,
+        "trust_remote_code": trust_remote_code,
+    }
+    if device_map is not None:
+        model_kwargs["device_map"] = device_map
+        model_kwargs["low_cpu_mem_usage"] = True
 
     # Load model with AutoModel (canonical for InternVL) or AutoModelForCausalLM
     try:
         model = AutoModel.from_pretrained(
             model_name_or_path,
-            torch_dtype=torch_dtype,
-            device_map=device_map,
-            low_cpu_mem_usage=True,
-            trust_remote_code=trust_remote_code
+            **model_kwargs
         )
     except Exception as e:
         print(f"[InternVL Loader] AutoModel fallback to AutoModelForCausalLM due to: {e}")
         model = AutoModelForCausalLM.from_pretrained(
             model_name_or_path,
-            torch_dtype=torch_dtype,
-            device_map=device_map,
-            low_cpu_mem_usage=True,
-            trust_remote_code=trust_remote_code
+            **model_kwargs
         )
+
+    # If device_map was None and cuda is available, move model directly to target device
+    if device_map is None and cuda_avail and device.startswith("cuda"):
+        _remove_accelerate_hooks(model)
+        model = model.to(device)
 
     # Ensure model has all_tied_weights_keys attribute if accessed directly
     if not hasattr(model, "all_tied_weights_keys"):

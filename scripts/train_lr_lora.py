@@ -25,7 +25,7 @@ def main():
     parser.add_argument("--max_val_samples", type=int, default=1000, help="Max validation samples per stage (default: 1000)")
     parser.add_argument("--max_length", type=int, default=384, help="Max sequence length (default: 384)")
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu", help="Target device (cuda/cpu)")
-    parser.add_argument("--device_map", type=str, default="auto" if torch.cuda.is_available() else "cpu", help="device_map for transformers (auto/cuda/cpu)")
+    parser.add_argument("--device_map", type=str, default=None, help="device_map for transformers (default: None for direct high-throughput GPU training)")
     parser.add_argument("--dtype", type=str, default="auto", choices=["auto", "bfloat16", "fp16", "float32"], help="Model torch_dtype")
     parser.add_argument("--gradient_checkpointing", action="store_true", default=False, help="Enable gradient checkpointing (disable by default on 24GB VRAM for 2x speedup)")
     args = parser.parse_args()
@@ -87,7 +87,7 @@ def main():
     print(f"[Training Pipeline] Dataset Mode:       {dataset_mode}")
     print(f"[Training Pipeline] Batch Size / Device:{args.batch_size} (Grad Accum: {args.grad_accum} -> Eff Batch: {effective_batch})")
     print(f"[Training Pipeline] Max Sequence Len:   {args.max_length}")
-    print(f"[Training Pipeline] Target Device:      {args.device} (device_map='{args.device_map}')")
+    print(f"[Training Pipeline] Target Device:      {args.device} (device_map={repr(args.device_map)})")
     print(f"[Training Pipeline] Precision:          {torch_dtype}")
 
     # Initialize Model and LoRA Adapter on GPU

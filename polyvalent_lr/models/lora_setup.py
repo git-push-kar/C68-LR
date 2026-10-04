@@ -55,6 +55,9 @@ def setup_internvl_lr_lora(
     peft_conf = create_peft_config(lora_config)
     peft_model = get_peft_model(model, peft_conf)
 
+    if device_map is None and torch.cuda.is_available() and (device is None or device.startswith("cuda")):
+        peft_model = peft_model.to(device or "cuda")
+
     if gradient_checkpointing and hasattr(peft_model, "enable_input_require_grads"):
         peft_model.enable_input_require_grads()
 
