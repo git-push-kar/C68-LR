@@ -33,6 +33,7 @@ class ReasoningMetrics:
         cls,
         predicted_text: str,
         ground_truth_label: str,
+        prompt_text: Optional[str] = None,
         expected_steps: Optional[int] = None
     ) -> Dict[str, Any]:
         """Evaluates a single model prediction against ground truth."""
@@ -43,9 +44,9 @@ class ReasoningMetrics:
         exact_match = (pred_label_norm.lower() == gt_label_norm.lower())
 
         # MCQA Fallback: If the model outputs "true"/"false" but the prompt uses options (A, B, 1, 2)
-        if not exact_match and pred_label_norm.lower() in ["true", "false", "uncertain"]:
-            # Extract options from the predicted_text (which contains the prompt)
-            options = re.findall(r"-\s*([A-Za-z0-9]+):\s*(.*?)(?=\n- |\n<\|im_start|>|\Z)", predicted_text, re.IGNORECASE | re.DOTALL)
+        if not exact_match and pred_label_norm.lower() in ["true", "false", "uncertain"] and prompt_text:
+            # Extract options from the prompt_text (which contains the options)
+            options = re.findall(r"-\s*([A-Za-z0-9]+):\s*(.*?)(?=\n- |\n<\|im_start|>|\Z)", prompt_text, re.IGNORECASE | re.DOTALL)
             for opt_key, opt_text in options:
                 clean_opt = opt_text.strip().lower()
                 if pred_label_norm.lower() in clean_opt or clean_opt in pred_label_norm.lower():

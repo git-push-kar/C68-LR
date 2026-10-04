@@ -77,7 +77,8 @@ class UnseenBenchmarkEvaluator:
 
             eval_res = ReasoningMetrics.evaluate_prediction(
                 predicted_text=generated_text,
-                ground_truth_label=ex.label
+                ground_truth_label=ex.label,
+                prompt_text=prompt
             )
             eval_res["id"] = ex.id
             eval_res["task_type"] = ex.task_type.value
