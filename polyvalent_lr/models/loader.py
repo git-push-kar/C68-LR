@@ -42,30 +42,50 @@ _apply_tied_weights_patch()
 
 def _patch_model_forward(model: Any) -> None:
     """
-    Wraps model.forward to safely handle text-only training and filter unsupported kwargs
-    (e.g., 'inputs_embeds', 'num_items_in_batch') while ensuring 'pixel_values=None' is provided
-    when missing.
+    Wraps model.forward and model.generate to safely route text-only training & inference
+    directly to the underlying language_model backbone, eliminating multimodal artifact crashes
+    (such as image_flags.squeeze, inputs_embeds mismatch, or pixel_values assertions).
     """
     cls = model.__class__
     if getattr(cls, "_forward_kwargs_patched", False):
         return
 
     orig_forward = cls.forward
-    sig = inspect.signature(orig_forward)
-    valid_kwargs = set(sig.parameters.keys())
+    orig_generate = getattr(cls, "generate", None)
 
     @functools.wraps(orig_forward)
     def safe_forward(self, *args, **kwargs):
-        # 1. Filter kwargs to only those accepted by orig_forward
-        filtered_kwargs = {k: v for k, v in kwargs.items() if k in valid_kwargs}
+        pixel_values = kwargs.get("pixel_values", None)
+        # For pure text inputs (training / inference without images):
+        if len(args) == 0 and pixel_values is None and hasattr(self, "language_model"):
+            lm = self.language_model
+            lm_sig = inspect.signature(lm.forward)
+            valid_lm_kwargs = set(lm_sig.parameters.keys())
+            has_var_kw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in lm_sig.parameters.values())
+            lm_kwargs = kwargs if has_var_kw else {k: v for k, v in kwargs.items() if k in valid_lm_kwargs}
+            return lm(**lm_kwargs)
 
-        # 2. Provide pixel_values=None for text-only forward passes if expected by signature
+        # Fallback to multimodal forward with kwargs filtering
+        sig = inspect.signature(orig_forward)
+        valid_kwargs = set(sig.parameters.keys())
+        has_var_kw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
+        filtered_kwargs = kwargs if has_var_kw else {k: v for k, v in kwargs.items() if k in valid_kwargs}
         if "pixel_values" in valid_kwargs and "pixel_values" not in filtered_kwargs and len(args) == 0:
             filtered_kwargs["pixel_values"] = None
-
         return orig_forward(self, *args, **filtered_kwargs)
 
     cls.forward = safe_forward
+
+    if orig_generate is not None:
+        @functools.wraps(orig_generate)
+        def safe_generate(self, *args, **kwargs):
+            pixel_values = kwargs.get("pixel_values", None)
+            if len(args) == 0 and pixel_values is None and hasattr(self, "language_model") and hasattr(self.language_model, "generate"):
+                return self.language_model.generate(*args, **kwargs)
+            return orig_generate(self, *args, **kwargs)
+
+        cls.generate = safe_generate
+
     cls._forward_kwargs_patched = True
 
 
@@ -153,7 +173,7 @@ def load_internvl_model_and_tokenizer(
     if not hasattr(model, "all_tied_weights_keys"):
         model.all_tied_weights_keys = getattr(model, "_tied_weights_keys", {})
 
-    # Patch forward method to safely ignore extra kwargs and supply pixel_values=None
+    # Patch forward and generate to safely route text-only operations to language_model
     _patch_model_forward(model)
 
     # Configure img_context_token_id so generate() does not fail assertion
