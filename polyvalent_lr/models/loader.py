@@ -42,8 +42,9 @@ _apply_tied_weights_patch()
 
 def _patch_model_forward(model: Any) -> None:
     """
-    Wraps model.forward to safely filter keyword arguments (e.g., 'inputs_embeds',
-    'num_items_in_batch') that are passed by PEFT/Trainer but not accepted by InternVLChatModel.
+    Wraps model.forward to safely handle text-only training and filter unsupported kwargs
+    (e.g., 'inputs_embeds', 'num_items_in_batch') while ensuring 'pixel_values=None' is provided
+    when missing.
     """
     cls = model.__class__
     if getattr(cls, "_forward_kwargs_patched", False):
@@ -51,19 +52,21 @@ def _patch_model_forward(model: Any) -> None:
 
     orig_forward = cls.forward
     sig = inspect.signature(orig_forward)
-    has_var_keyword = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
+    valid_kwargs = set(sig.parameters.keys())
 
-    if not has_var_keyword:
-        valid_kwargs = set(sig.parameters.keys())
+    @functools.wraps(orig_forward)
+    def safe_forward(self, *args, **kwargs):
+        # 1. Filter kwargs to only those accepted by orig_forward
+        filtered_kwargs = {k: v for k, v in kwargs.items() if k in valid_kwargs}
 
-        @functools.wraps(orig_forward)
-        def safe_forward(self, *args, **kwargs):
-            # Strip kwargs that the base forward method doesn't accept
-            filtered_kwargs = {k: v for k, v in kwargs.items() if k in valid_kwargs}
-            return orig_forward(self, *args, **filtered_kwargs)
+        # 2. Provide pixel_values=None for text-only forward passes if expected by signature
+        if "pixel_values" in valid_kwargs and "pixel_values" not in filtered_kwargs and len(args) == 0:
+            filtered_kwargs["pixel_values"] = None
 
-        cls.forward = safe_forward
-        cls._forward_kwargs_patched = True
+        return orig_forward(self, *args, **filtered_kwargs)
+
+    cls.forward = safe_forward
+    cls._forward_kwargs_patched = True
 
 
 def ensure_internvl_tokens_configured(model: Any, tokenizer: Any) -> None:
@@ -150,7 +153,7 @@ def load_internvl_model_and_tokenizer(
     if not hasattr(model, "all_tied_weights_keys"):
         model.all_tied_weights_keys = getattr(model, "_tied_weights_keys", {})
 
-    # Patch forward method to safely ignore extra kwargs (like inputs_embeds)
+    # Patch forward method to safely ignore extra kwargs and supply pixel_values=None
     _patch_model_forward(model)
 
     # Configure img_context_token_id so generate() does not fail assertion
