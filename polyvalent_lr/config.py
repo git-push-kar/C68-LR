@@ -48,9 +48,12 @@ class CurriculumStageConfig(BaseModel):
     datasets: List[DatasetSource]
     epochs: int = 2
     learning_rate: float = 2e-4
-    batch_size: int = 8
-    gradient_accumulation_steps: int = 4
+    batch_size: int = 16
+    gradient_accumulation_steps: int = 2
     warmup_ratio: float = 0.05
+    max_train_samples: Optional[int] = 50000
+    max_val_samples: Optional[int] = 1000
+    max_length: int = 512
     description: str
 
 
@@ -90,6 +93,11 @@ class LRModuleConfig(BaseModel):
                 datasets=[DatasetSource.PROOFWRITER],
                 epochs=2,
                 learning_rate=2e-4,
+                batch_size=16,
+                gradient_accumulation_steps=2,
+                max_train_samples=50000,
+                max_val_samples=1000,
+                max_length=512,
                 description="Stage 1: Multi-step structured deduction from rules and facts.",
             ),
             CurriculumStageConfig(
@@ -98,6 +106,11 @@ class LRModuleConfig(BaseModel):
                 datasets=[DatasetSource.P_FOLIO, DatasetSource.FOLIO],
                 epochs=2,
                 learning_rate=1e-4,
+                batch_size=16,
+                gradient_accumulation_steps=2,
+                max_train_samples=50000,
+                max_val_samples=1000,
+                max_length=512,
                 description="Stage 2: Natural language First-Order Logic & human proof supervision.",
             ),
             CurriculumStageConfig(
@@ -106,6 +119,11 @@ class LRModuleConfig(BaseModel):
                 datasets=[DatasetSource.ABDUCTION_RULES],
                 epochs=1,
                 learning_rate=5e-5,
+                batch_size=16,
+                gradient_accumulation_steps=2,
+                max_train_samples=25000,
+                max_val_samples=1000,
+                max_length=512,
                 description="Stage 3 (Optional): Abductive inference from observations to hypotheses.",
             ),
         ]

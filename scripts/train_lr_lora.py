@@ -17,6 +17,12 @@ def main():
     parser.add_argument("--output_dir", type=str, default="checkpoints/internvl3_2b_lr", help="Adapter output dir")
     parser.add_argument("--rank", type=int, default=32, help="LoRA rank")
     parser.add_argument("--alpha", type=int, default=64, help="LoRA alpha")
+    parser.add_argument("--batch_size", type=int, default=16, help="Per-device batch size (default: 16)")
+    parser.add_argument("--grad_accum", type=int, default=2, help="Gradient accumulation steps (default: 2)")
+    parser.add_argument("--epochs", type=int, default=2, help="Number of training epochs per stage (default: 2)")
+    parser.add_argument("--max_train_samples", type=int, default=50000, help="Max representative training samples per stage (default: 50000)")
+    parser.add_argument("--max_val_samples", type=int, default=1000, help="Max validation samples per stage (default: 1000)")
+    parser.add_argument("--max_length", type=int, default=512, help="Max sequence length (default: 512)")
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu", help="Target device (cuda/cpu)")
     parser.add_argument("--device_map", type=str, default="auto" if torch.cuda.is_available() else "cpu", help="device_map for transformers (auto/cuda/cpu)")
     parser.add_argument("--dtype", type=str, default="auto", choices=["auto", "bfloat16", "fp16", "float32"], help="Model torch_dtype")
@@ -60,11 +66,24 @@ def main():
         lora=LoRAConfig(r=args.rank, lora_alpha=args.alpha)
     )
 
-    print(f"[Training Pipeline] Base Model:      {config.base_model_name_or_path}")
-    print(f"[Training Pipeline] LoRA Rank:        {config.lora.r} | Alpha: {config.lora.lora_alpha}")
-    print(f"[Training Pipeline] Output Dir:       {config.output_dir}")
-    print(f"[Training Pipeline] Target Device:    {args.device} (device_map='{args.device_map}')")
-    print(f"[Training Pipeline] Precision:        {torch_dtype}")
+    # Apply command-line overrides to curriculum stages
+    for stage in config.curriculum_stages:
+        stage.batch_size = args.batch_size
+        stage.gradient_accumulation_steps = args.grad_accum
+        stage.epochs = args.epochs
+        stage.max_train_samples = args.max_train_samples
+        stage.max_val_samples = args.max_val_samples
+        stage.max_length = args.max_length
+
+    effective_batch = args.batch_size * args.grad_accum
+    print(f"[Training Pipeline] Base Model:        {config.base_model_name_or_path}")
+    print(f"[Training Pipeline] LoRA Rank:          {config.lora.r} | Alpha: {config.lora.lora_alpha}")
+    print(f"[Training Pipeline] Output Dir:         {config.output_dir}")
+    print(f"[Training Pipeline] Batch Size / Device:{args.batch_size} (Grad Accum: {args.grad_accum} -> Eff Batch: {effective_batch})")
+    print(f"[Training Pipeline] Sample Limit/Stage: {args.max_train_samples:,} train / {args.max_val_samples:,} val")
+    print(f"[Training Pipeline] Max Sequence Len:   {args.max_length}")
+    print(f"[Training Pipeline] Target Device:      {args.device} (device_map='{args.device_map}')")
+    print(f"[Training Pipeline] Precision:          {torch_dtype}")
 
     # Initialize Model and LoRA Adapter on GPU
     model, tokenizer = setup_internvl_lr_lora(

@@ -1,23 +1,65 @@
 import json
+import random
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple, Any
 from torch.utils.data import Dataset
+from tqdm import tqdm
 from polyvalent_lr.config import CurriculumStageConfig, DatasetSource
 from polyvalent_lr.data.schema import LogicalExample
 
 
 class LogicalReasoningDataset(Dataset):
-    """PyTorch Dataset wrapping structured LogicalExample items for instruction fine-tuning."""
+    """PyTorch Dataset wrapping structured LogicalExample items with fast cached tokenization."""
 
-    def __init__(self, examples: List[LogicalExample], tokenizer=None, max_length: int = 2048):
+    def __init__(self, examples: List[LogicalExample], tokenizer=None, max_length: int = 512, pre_tokenize: bool = True):
         self.examples = examples
         self.tokenizer = tokenizer
         self.max_length = max_length
+        self.cached_features = None
+
+        if self.tokenizer is not None and pre_tokenize and len(examples) > 0:
+            self._pre_tokenize_all()
+
+    def _pre_tokenize_all(self):
+        """Pre-tokenizes all examples in memory to eliminate DataLoader tokenization bottlenecks."""
+        print(f"[Dataset] Pre-tokenizing {len(self.examples)} examples (max_length={self.max_length})...")
+        self.cached_features = []
+        for ex in self.examples:
+            prompt = ex.to_instruction_prompt()
+            target = ex.to_target_text()
+            full_text = prompt + target
+
+            prompt_tokens = self.tokenizer(prompt, add_special_tokens=False)
+            full_tokens = self.tokenizer(
+                full_text,
+                max_length=self.max_length,
+                truncation=True,
+                add_special_tokens=True
+            )
+
+            input_ids = full_tokens["input_ids"]
+            attention_mask = full_tokens["attention_mask"]
+
+            labels = list(input_ids)
+            prompt_len = len(prompt_tokens["input_ids"])
+            for i in range(min(prompt_len, len(labels))):
+                labels[i] = -100
+
+            self.cached_features.append({
+                "input_ids": input_ids,
+                "attention_mask": attention_mask,
+                "labels": labels,
+                "example_id": ex.id
+            })
+        print(f"[Dataset] Pre-tokenization complete for {len(self.cached_features)} items.")
 
     def __len__(self) -> int:
         return len(self.examples)
 
     def __getitem__(self, idx: int) -> Dict[str, Any]:
+        if self.cached_features is not None:
+            return self.cached_features[idx]
+
         example = self.examples[idx]
         prompt = example.to_instruction_prompt()
         target = example.to_target_text()
@@ -34,14 +76,12 @@ class LogicalReasoningDataset(Dataset):
                 "task_type": example.task_type.value
             }
 
-        # Tokenize prompt and target for causal LM loss with prompt masking
         prompt_tokens = self.tokenizer(prompt, add_special_tokens=False)
         full_tokens = self.tokenizer(full_text, max_length=self.max_length, truncation=True, add_special_tokens=True)
 
         input_ids = full_tokens["input_ids"]
         attention_mask = full_tokens["attention_mask"]
 
-        # Mask prompt tokens with -100 so loss is computed ONLY on proof + answer target
         labels = list(input_ids)
         prompt_len = len(prompt_tokens["input_ids"])
         for i in range(min(prompt_len, len(labels))):
@@ -56,13 +96,13 @@ class LogicalReasoningDataset(Dataset):
 
 
 class CurriculumManager:
-    """Manages progression through the defined training stages (ProofWriter -> P-FOLIO/FOLIO -> Abduction)."""
+    """Manages progression through the defined training stages with balanced representative sampling."""
 
     def __init__(self, processed_data_dir: str):
         self.data_dir = Path(processed_data_dir)
 
     def load_stage_data(self, stage_config: CurriculumStageConfig) -> Tuple[List[LogicalExample], List[LogicalExample]]:
-        """Loads train and dev examples corresponding to the datasets in the specified stage."""
+        """Loads train and dev examples with optional balanced subsampling for fast training."""
         train_examples = []
         val_examples = []
 
@@ -81,5 +121,20 @@ class CurriculumManager:
                     for line in f:
                         if line.strip():
                             val_examples.append(LogicalExample(**json.loads(line)))
+
+        # Subsample training data if max_train_samples is set
+        if stage_config.max_train_samples and len(train_examples) > stage_config.max_train_samples:
+            # Deterministic balanced stride sampling to maintain distribution across rules and depths
+            stride = len(train_examples) / stage_config.max_train_samples
+            sampled_indices = [int(i * stride) for i in range(stage_config.max_train_samples)]
+            print(f"[CurriculumManager] Sampling {stage_config.max_train_samples:,} representative examples from {len(train_examples):,} total.")
+            train_examples = [train_examples[i] for i in sampled_indices]
+
+        # Subsample validation data for fast evaluation
+        if stage_config.max_val_samples and len(val_examples) > stage_config.max_val_samples:
+            stride = len(val_examples) / stage_config.max_val_samples
+            sampled_val_indices = [int(i * stride) for i in range(stage_config.max_val_samples)]
+            print(f"[CurriculumManager] Sampling {stage_config.max_val_samples:,} validation examples from {len(val_examples):,} total.")
+            val_examples = [val_examples[i] for i in sampled_val_indices]
 
         return train_examples, val_examples

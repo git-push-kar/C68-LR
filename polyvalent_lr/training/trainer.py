@@ -37,8 +37,18 @@ class StagedCurriculumTrainer:
             print(f"[Warning] No training data found for stage {stage_config.name}. Skipping.")
             return {"status": "skipped", "reason": "empty_dataset"}
 
-        train_dataset = LogicalReasoningDataset(train_examples, tokenizer=self.tokenizer)
-        val_dataset = LogicalReasoningDataset(val_examples, tokenizer=self.tokenizer) if val_examples else None
+        train_dataset = LogicalReasoningDataset(
+            train_examples,
+            tokenizer=self.tokenizer,
+            max_length=stage_config.max_length,
+            pre_tokenize=True
+        )
+        val_dataset = LogicalReasoningDataset(
+            val_examples,
+            tokenizer=self.tokenizer,
+            max_length=stage_config.max_length,
+            pre_tokenize=True
+        ) if val_examples else None
 
         stage_output_dir = Path(self.config.output_dir) / f"stage_{stage_config.stage_id}_{stage_config.name}"
         stage_output_dir.mkdir(parents=True, exist_ok=True)
@@ -54,12 +64,14 @@ class StagedCurriculumTrainer:
             "gradient_accumulation_steps": stage_config.gradient_accumulation_steps,
             "learning_rate": stage_config.learning_rate,
             "warmup_ratio": stage_config.warmup_ratio,
-            "logging_steps": 10,
+            "logging_steps": 25,
             "save_strategy": "epoch",
             "eval_strategy" if hasattr(TrainingArguments, "eval_strategy") else "evaluation_strategy": "epoch" if val_dataset else "no",
             "bf16": use_bf16,
             "fp16": use_fp16,
             "dataloader_pin_memory": use_cuda,
+            "dataloader_num_workers": 2 if use_cuda else 0,
+            "optim": "adamw_torch_fused" if use_cuda else "adamw_torch",
             "save_total_limit": 2,
             "remove_unused_columns": False,
             "report_to": "none"
