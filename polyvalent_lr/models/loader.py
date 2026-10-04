@@ -1,4 +1,6 @@
 import torch
+import inspect
+import functools
 import transformers
 from typing import Tuple, Any, Optional
 from transformers import AutoModel, AutoModelForCausalLM, AutoTokenizer, PreTrainedModel
@@ -7,8 +9,6 @@ from transformers import AutoModel, AutoModelForCausalLM, AutoTokenizer, PreTrai
 # ==============================================================================
 # Compatibility Patch for Transformers >= 4.48 with InternVL Remote Code
 # ==============================================================================
-# Custom remote code in InternVL (InternVLChatModel) defines _tied_weights_keys
-# whereas transformers >= 4.48 expects all_tied_weights_keys attribute.
 def _apply_tied_weights_patch():
     try:
         from torch import nn
@@ -38,6 +38,32 @@ def _apply_tied_weights_patch():
         print(f"[Warning] Could not apply tied weights compatibility patch: {e}")
 
 _apply_tied_weights_patch()
+
+
+def _patch_model_forward(model: Any) -> None:
+    """
+    Wraps model.forward to safely filter keyword arguments (e.g., 'inputs_embeds',
+    'num_items_in_batch') that are passed by PEFT/Trainer but not accepted by InternVLChatModel.
+    """
+    cls = model.__class__
+    if getattr(cls, "_forward_kwargs_patched", False):
+        return
+
+    orig_forward = cls.forward
+    sig = inspect.signature(orig_forward)
+    has_var_keyword = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
+
+    if not has_var_keyword:
+        valid_kwargs = set(sig.parameters.keys())
+
+        @functools.wraps(orig_forward)
+        def safe_forward(self, *args, **kwargs):
+            # Strip kwargs that the base forward method doesn't accept
+            filtered_kwargs = {k: v for k, v in kwargs.items() if k in valid_kwargs}
+            return orig_forward(self, *args, **filtered_kwargs)
+
+        cls.forward = safe_forward
+        cls._forward_kwargs_patched = True
 
 
 def ensure_internvl_tokens_configured(model: Any, tokenizer: Any) -> None:
@@ -123,6 +149,9 @@ def load_internvl_model_and_tokenizer(
     # Ensure model has all_tied_weights_keys attribute if accessed directly
     if not hasattr(model, "all_tied_weights_keys"):
         model.all_tied_weights_keys = getattr(model, "_tied_weights_keys", {})
+
+    # Patch forward method to safely ignore extra kwargs (like inputs_embeds)
+    _patch_model_forward(model)
 
     # Configure img_context_token_id so generate() does not fail assertion
     ensure_internvl_tokens_configured(model, tokenizer)

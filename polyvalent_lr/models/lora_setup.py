@@ -37,8 +37,13 @@ def setup_internvl_lr_lora(
         is_eval=False
     )
 
-    if gradient_checkpointing and hasattr(model, "gradient_checkpointing_enable"):
-        model.gradient_checkpointing_enable()
+    if gradient_checkpointing:
+        if hasattr(model, "gradient_checkpointing_enable"):
+            model.gradient_checkpointing_enable()
+        if hasattr(model, "enable_input_require_grads"):
+            model.enable_input_require_grads()
+        if hasattr(model.config, "use_cache"):
+            model.config.use_cache = False
         print("[LoRA Setup] Enabled gradient checkpointing for VRAM efficiency.")
 
     # Freeze all base parameters (including vision encoder)
@@ -47,6 +52,9 @@ def setup_internvl_lr_lora(
 
     peft_conf = create_peft_config(lora_config)
     peft_model = get_peft_model(model, peft_conf)
+
+    if gradient_checkpointing and hasattr(peft_model, "enable_input_require_grads"):
+        peft_model.enable_input_require_grads()
 
     trainable_params, all_param = peft_model.get_nb_trainable_parameters()
     print(

@@ -72,7 +72,7 @@ class EvaluationConfig(BaseModel):
     max_eval_samples_per_bench: Optional[int] = None
     temperature: float = 0.0
     top_p: float = 1.0
-    max_new_tokens: int = 512
+    max_new_tokens: int = 256
     prompt_template_style: str = "structured_cot"
 
 

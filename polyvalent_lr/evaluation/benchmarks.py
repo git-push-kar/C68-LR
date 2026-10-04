@@ -66,7 +66,9 @@ class UnseenBenchmarkEvaluator:
                     temperature=self.config.temperature,
                     top_p=self.config.top_p,
                     do_sample=(self.config.temperature > 0.0),
-                    pad_token_id=tokenizer.eos_token_id
+                    pad_token_id=tokenizer.eos_token_id,
+                    use_cache=True,
+                    repetition_penalty=1.05
                 )
 
             # Strip input prompt from generated output

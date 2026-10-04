@@ -21,6 +21,8 @@ def main():
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu", help="Target compute device (cuda/cpu)")
     parser.add_argument("--device_map", type=str, default="auto" if torch.cuda.is_available() else "cpu", help="device_map for transformers (auto/cuda/cpu)")
     parser.add_argument("--dtype", type=str, default="auto", choices=["auto", "bfloat16", "fp16", "float32"], help="Model torch_dtype")
+    parser.add_argument("--max_new_tokens", type=int, default=256, help="Maximum generated tokens per sample (default: 256)")
+    parser.add_argument("--max_samples", type=int, default=None, help="Optional sample limit per benchmark (for fast validation)")
     parser.add_argument("--run_regression_probes", action="store_true", default=True, help="Run general NLP regression probes")
     args = parser.parse_args()
 
@@ -52,7 +54,11 @@ def main():
         model = PeftModel.from_pretrained(model, args.adapter_dir)
         model.eval()
 
-    evaluator = UnseenBenchmarkEvaluator(benchmark_dir=args.benchmark_dir)
+    eval_config = EvaluationConfig(
+        max_new_tokens=args.max_new_tokens,
+        max_eval_samples_per_bench=args.max_samples
+    )
+    evaluator = UnseenBenchmarkEvaluator(benchmark_dir=args.benchmark_dir, config=eval_config)
     report = {"model": args.model_path, "adapter": args.adapter_dir, "benchmarks": {}}
 
     for bench in [UnseenBenchmark.LOGICBENCH, UnseenBenchmark.MULTI_LOGIEVAL, UnseenBenchmark.LOGICNLI]:
