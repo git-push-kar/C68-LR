@@ -42,6 +42,24 @@ class ReasoningMetrics:
 
         exact_match = (pred_label_norm.lower() == gt_label_norm.lower())
 
+        # MCQA Fallback: If the model outputs "true"/"false" but the prompt uses options (A, B, 1, 2)
+        if not exact_match and pred_label_norm.lower() in ["true", "false", "uncertain"]:
+            # Extract options from the predicted_text (which contains the prompt)
+            options = re.findall(r"-\s*([A-Za-z0-9]+):\s*(.*?)(?=\n- |\n<\|im_start|>|\Z)", predicted_text, re.IGNORECASE | re.DOTALL)
+            for opt_key, opt_text in options:
+                clean_opt = opt_text.strip().lower()
+                if pred_label_norm.lower() in clean_opt or clean_opt in pred_label_norm.lower():
+                    if opt_key.lower() == gt_label_norm.lower():
+                        exact_match = True
+                        break
+            
+            # Fallback for standard LogicBench indexing if regex fails
+            if not exact_match:
+                if (gt_label_norm.lower() == "1" and pred_label_norm.lower() == "true") or \
+                   (gt_label_norm.lower() == "2" and pred_label_norm.lower() == "false") or \
+                   (gt_label_norm.lower() == "3" and pred_label_norm.lower() == "uncertain"):
+                    exact_match = True
+
         # Measure reasoning depth (number of reasoning sentences or steps)
         reasoning_depth = 0
         has_reasoning_trace = False
