@@ -14,6 +14,7 @@ from polyvalent_lr.models.loader import (
     load_internvl_model_and_tokenizer,
     ensure_internvl_tokens_configured,
 )
+from polyvalent_lr.config import DEFAULT_BASE_MODEL_PATH
 
 try:
     from peft import PeftModel
@@ -590,8 +591,8 @@ def load_model(args):
 
 def main():
     parser = argparse.ArgumentParser(description="Zero-dependency chat UI for the fine-tuned LR model.")
-    parser.add_argument("--model_path", type=str, default="checkpoints/internvl3_2b_lr_fused",
-                        help="Fused checkpoint dir, LoRA base model, or HF repo id.")
+    parser.add_argument("--model_path", type=str, default=DEFAULT_BASE_MODEL_PATH,
+                        help="Fused checkpoint dir, base model dir, or HF repo id (default: local InternVL3-2B base).")
     parser.add_argument("--adapter_dir", type=str, default=None,
                         help="Optional LoRA adapter to attach to the base model.")
     parser.add_argument("--host", type=str, default="127.0.0.1")

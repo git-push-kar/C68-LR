@@ -49,22 +49,24 @@ Writes `data/processed/Rehearsal_train.jsonl` / `Rehearsal_val.jsonl`. The curri
 these at `rehearsal_ratio` per stage (defaults: stage 1 = 10%, stage 2 = 15%, stage 3 = 10%).
 
 ### 2. Run Staged Curriculum LoRA Training
-Trains the LR LoRA adapter across the staged curriculum on `InternVL3-2B` (rank 16 / alpha 32,
-capped per-stage sampling, early stopping with best-model selection):
+Trains the LR LoRA adapter across the staged curriculum on the **local** InternVL3-2B base
+(`C:\Users\Admin\Desktop\LY_C68\deepfake_project\models\InternVL3-2B`, set via
+`DEFAULT_BASE_MODEL_PATH` in `polyvalent_lr/config.py`), rank 16 / alpha 32, capped
+per-stage sampling, early stopping with best-model selection:
 ```bash
-python scripts/train_lr_lora.py --model_name OpenGVLab/InternVL3-2B --output_dir checkpoints/internvl3_2b_lr_v2 --rank 16 --alpha 32
+python scripts/train_lr_lora.py --output_dir checkpoints/internvl3_2b_lr_v2 --rank 16 --alpha 32
 ```
 
 ### 3. Evaluate Unseen Benchmarks
 Evaluates the base model vs. base + LR LoRA on quarantined benchmarks:
 ```bash
-python scripts/evaluate_benchmarks.py --model_path OpenGVLab/InternVL3-2B --adapter_dir checkpoints/internvl3_2b_lr_v2/final_lr_lora --benchmark_dir data/benchmarks
+python scripts/evaluate_benchmarks.py --adapter_dir checkpoints/internvl3_2b_lr_v2/final_lr_lora --benchmark_dir data/benchmarks
 ```
 
 ### 4. Merge Weights into Standalone Foundation Checkpoint
-Merges the LoRA adapter into a copy of `InternVL3-2B` and verifies numerical equivalence:
+Merges the LoRA adapter into a copy of the local base and verifies numerical equivalence:
 ```bash
-python scripts/merge_weights.py --base_model OpenGVLab/InternVL3-2B --adapter_dir checkpoints/internvl3_2b_lr_v2/final_lr_lora --merged_output_dir checkpoints/internvl3_2b_lr_v2_fused
+python scripts/merge_weights.py --adapter_dir checkpoints/internvl3_2b_lr_v2/final_lr_lora --merged_output_dir checkpoints/internvl3_2b_lr_v2_fused
 ```
 
 ### 5. Launch the Chat UI
@@ -76,7 +78,7 @@ Then open `http://127.0.0.1:8005`. Useful flags: `--model_path`, `--adapter_dir`
 
 To chat with the base model + LoRA adapter instead of the fused checkpoint:
 ```bash
-python scripts/chat_ui.py --model_path OpenGVLab/InternVL3-2B --adapter_dir checkpoints/internvl3_2b_lr_v2/final_lr_lora
+python scripts/chat_ui.py --adapter_dir checkpoints/internvl3_2b_lr_v2/final_lr_lora
 ```
 
 ---

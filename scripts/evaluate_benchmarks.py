@@ -6,7 +6,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import torch
 from peft import PeftModel
 
-from polyvalent_lr.config import UnseenBenchmark, EvaluationConfig
+from polyvalent_lr.config import UnseenBenchmark, EvaluationConfig, DEFAULT_BASE_MODEL_PATH
 from polyvalent_lr.models.loader import load_internvl_model_and_tokenizer
 from polyvalent_lr.evaluation.benchmarks import UnseenBenchmarkEvaluator
 from polyvalent_lr.evaluation.regression import GeneralRegressionSuite
@@ -14,7 +14,7 @@ from polyvalent_lr.evaluation.regression import GeneralRegressionSuite
 
 def main():
     parser = argparse.ArgumentParser(description="Evaluate on quarantined unseen benchmarks (LogicBench, Multi-LogiEval, LogicNLI)")
-    parser.add_argument("--model_path", type=str, default="OpenGVLab/InternVL3-2B", help="Path or HF ID of model to evaluate")
+    parser.add_argument("--model_path", type=str, default=DEFAULT_BASE_MODEL_PATH, help="Path or HF ID of model to evaluate")
     parser.add_argument("--adapter_dir", type=str, default=None, help="Optional LoRA adapter path")
     parser.add_argument("--benchmark_dir", type=str, default="data/benchmarks", help="Quarantined benchmark dir")
     parser.add_argument("--output_file", type=str, default="evaluation_results.json", help="Output summary report file")

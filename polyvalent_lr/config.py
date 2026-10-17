@@ -3,6 +3,12 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 
 
+# Local base foundation model used for all training / evaluation / merge runs.
+# Override per entry point with the matching CLI flag (--model_name / --model_path / --base_model)
+# or by editing this single constant.
+DEFAULT_BASE_MODEL_PATH = r"C:\Users\Admin\Desktop\LY_C68\deepfake_project\models\InternVL3-2B"
+
+
 class LogicTaskType(str, Enum):
     DEDUCTION = "deduction"
     ABDUCTION = "abduction"
@@ -86,7 +92,7 @@ class EvaluationConfig(BaseModel):
 
 
 class LRModuleConfig(BaseModel):
-    base_model_name_or_path: str = "OpenGVLab/InternVL3-2B"
+    base_model_name_or_path: str = DEFAULT_BASE_MODEL_PATH
     output_dir: str = "checkpoints/internvl3_2b_lr_v2"
     merged_output_dir: str = "checkpoints/internvl3_2b_lr_v2_fused"
     lora: LoRAConfig = Field(default_factory=LoRAConfig)

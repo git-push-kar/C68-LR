@@ -5,7 +5,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import torch
 
-from polyvalent_lr.config import LRModuleConfig, LoRAConfig
+from polyvalent_lr.config import LRModuleConfig, LoRAConfig, DEFAULT_BASE_MODEL_PATH
 from polyvalent_lr.models.lora_setup import setup_internvl_lr_lora
 from polyvalent_lr.training.trainer import StagedCurriculumTrainer
 
@@ -13,7 +13,7 @@ from polyvalent_lr.training.trainer import StagedCurriculumTrainer
 def main():
     parser = argparse.ArgumentParser(description="Train Staged LR LoRA on InternVL3-2B on GPU (RTX A5000 / Ampere)")
     parser.add_argument("--config_file", type=str, default=None, help="Path to YAML config")
-    parser.add_argument("--model_name", type=str, default="OpenGVLab/InternVL3-2B", help="Base model path")
+    parser.add_argument("--model_name", type=str, default=DEFAULT_BASE_MODEL_PATH, help="Base model path (local dir or HF repo id)")
     parser.add_argument("--output_dir", type=str, default="checkpoints/internvl3_2b_lr_v2", help="Adapter output dir")
     parser.add_argument("--rank", type=int, default=16, help="LoRA rank")
     parser.add_argument("--alpha", type=int, default=32, help="LoRA alpha")
