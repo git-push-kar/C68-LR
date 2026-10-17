@@ -24,6 +24,18 @@ class LogicalExample(BaseModel):
 
     def to_instruction_prompt(self, style: str = "structured_cot") -> str:
         """Formats the logical example into an instruction prompt."""
+        if self.task_type == LogicTaskType.GENERAL:
+            system_text = "You are a helpful, knowledgeable AI assistant."
+            context_text = "\n".join(p for p in self.premises if p.strip()).strip()
+            user_text = self.hypothesis_or_query.strip()
+            if context_text:
+                user_text = f"{user_text}\n\nContext:\n{context_text}"
+            return (
+                f"<|im_start|>system\n{system_text}<|im_end|>\n"
+                f"<|im_start|>user\n{user_text}<|im_end|>\n"
+                f"<|im_start|>assistant\n"
+            )
+
         premises_text = "\n".join(f"- {p}" for p in self.premises)
         
         if self.task_type == LogicTaskType.DEDUCTION:
@@ -54,6 +66,9 @@ class LogicalExample(BaseModel):
 
     def to_target_text(self) -> str:
         """Formats the target ground truth response with reasoning trace and final label."""
+        if self.task_type == LogicTaskType.GENERAL:
+            return f"{(self.proof_trace_text or '').strip()}<|im_end|>"
+
         if self.proof_trace_text:
             trace = self.proof_trace_text.strip()
         elif self.proof_steps:

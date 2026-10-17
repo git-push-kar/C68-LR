@@ -30,6 +30,12 @@ wheels/
 .pytest_cache/
 .coverage
 htmlcov/
+.ruff_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# Local tooling / agent state (plans, scratch)
+.opencode/
 
 # Raw Datasets & Large Archives (Preserve benchmarks and schema definitions)
 data/raw/
@@ -48,16 +54,20 @@ checkpoints/
 *.pt
 *.pth
 *.bin
+*.onnx
+*.gguf
 *.safetensors
 
 # Logs & Experiment Tracking
 *.log
 runs/
 wandb/
-evaluation_results.json
+evaluation_results*.json
 
 # IDE & OS specific files
 .idea/
 .vscode/
 .DS_Store
 Thumbs.db
+*.tmp
+nul

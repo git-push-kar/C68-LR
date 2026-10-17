@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Dict, Any, Optional
 import torch
-from transformers import Trainer, TrainingArguments
+from transformers import Trainer, TrainingArguments, EarlyStoppingCallback
 
 from polyvalent_lr.config import LRModuleConfig, CurriculumStageConfig
 from polyvalent_lr.data.curriculum import CurriculumManager, LogicalReasoningDataset
@@ -70,9 +70,14 @@ class StagedCurriculumTrainer:
             "gradient_accumulation_steps": stage_config.gradient_accumulation_steps,
             "learning_rate": stage_config.learning_rate,
             "warmup_ratio": stage_config.warmup_ratio,
+            "lr_scheduler_type": "cosine",
+            "weight_decay": 0.01,
             "logging_steps": 25,
             "save_strategy": "epoch",
             "eval_strategy" if hasattr(TrainingArguments, "eval_strategy") else "evaluation_strategy": "epoch" if val_dataset else "no",
+            "load_best_model_at_end": bool(val_dataset),
+            "metric_for_best_model": "eval_loss",
+            "greater_is_better": False,
             "bf16": use_bf16,
             "fp16": use_fp16,
             "tf32": use_cuda,
@@ -89,12 +94,17 @@ class StagedCurriculumTrainer:
 
         collator = LogicalDataCollator(tokenizer=self.tokenizer)
 
+        callbacks = []
+        if val_dataset:
+            callbacks.append(EarlyStoppingCallback(early_stopping_patience=1, early_stopping_threshold=0.0))
+
         trainer = Trainer(
             model=self.model,
             args=training_args,
             train_dataset=train_dataset,
             eval_dataset=val_dataset,
-            data_collator=collator
+            data_collator=collator,
+            callbacks=callbacks
         )
 
         train_result = trainer.train()

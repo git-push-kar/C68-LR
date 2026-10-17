@@ -68,7 +68,10 @@ class UnseenBenchmarkEvaluator:
                     do_sample=(self.config.temperature > 0.0),
                     pad_token_id=tokenizer.eos_token_id,
                     use_cache=True,
-                    repetition_penalty=1.05
+                    repetition_penalty=self.config.repetition_penalty,
+                    no_repeat_ngram_size=self.config.no_repeat_ngram_size,
+                    stop_strings=self.config.stop_strings,
+                    tokenizer=tokenizer
                 )
 
             # Strip input prompt from generated output

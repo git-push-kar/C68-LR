@@ -9,8 +9,8 @@ from polyvalent_lr.models.weight_merger import WeightMerger
 def main():
     parser = argparse.ArgumentParser(description="Merge LR LoRA weights into InternVL3-2B standalone foundation on GPU")
     parser.add_argument("--base_model", type=str, default="OpenGVLab/InternVL3-2B", help="Path/name of base model")
-    parser.add_argument("--adapter_dir", type=str, default="checkpoints/internvl3_2b_lr/final_lr_lora", help="Trained adapter dir")
-    parser.add_argument("--merged_output_dir", type=str, default="checkpoints/internvl3_2b_lr_fused", help="Fused model output dir")
+    parser.add_argument("--adapter_dir", type=str, default="checkpoints/internvl3_2b_lr_v2/final_lr_lora", help="Trained adapter dir")
+    parser.add_argument("--merged_output_dir", type=str, default="checkpoints/internvl3_2b_lr_v2_fused", help="Fused model output dir")
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu", help="Target device (cuda/cpu)")
     parser.add_argument("--device_map", type=str, default="auto" if torch.cuda.is_available() else "cpu", help="device_map for loading (auto/cuda/cpu)")
     parser.add_argument("--verify_equivalence", action="store_true", default=True, help="Run numerical equivalence test")

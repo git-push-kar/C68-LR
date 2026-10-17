@@ -7,6 +7,7 @@ class LogicTaskType(str, Enum):
     DEDUCTION = "deduction"
     ABDUCTION = "abduction"
     INDUCTION = "induction"
+    GENERAL = "general"
 
 
 class DatasetSource(str, Enum):
@@ -14,6 +15,7 @@ class DatasetSource(str, Enum):
     P_FOLIO = "P-FOLIO"
     FOLIO = "FOLIO"
     ABDUCTION_RULES = "AbductionRules"
+    REHEARSAL = "Rehearsal"
 
 
 class UnseenBenchmark(str, Enum):
@@ -23,8 +25,8 @@ class UnseenBenchmark(str, Enum):
 
 
 class LoRAConfig(BaseModel):
-    r: int = Field(default=32, description="LoRA rank")
-    lora_alpha: int = Field(default=64, description="LoRA scaling factor alpha")
+    r: int = Field(default=16, description="LoRA rank")
+    lora_alpha: int = Field(default=32, description="LoRA scaling factor alpha")
     lora_dropout: float = Field(default=0.05, description="LoRA dropout rate")
     target_modules: List[str] = Field(
         default=[
@@ -54,6 +56,7 @@ class CurriculumStageConfig(BaseModel):
     max_train_samples: Optional[int] = 50000
     max_val_samples: Optional[int] = 1000
     max_length: int = 512
+    rehearsal_ratio: float = 0.1
     description: str
 
 
@@ -76,13 +79,16 @@ class EvaluationConfig(BaseModel):
     temperature: float = 0.0
     top_p: float = 1.0
     max_new_tokens: int = 256
+    repetition_penalty: float = 1.05
+    no_repeat_ngram_size: int = 3
+    stop_strings: List[str] = ["<|im_end|>", "<|im_start|>"]
     prompt_template_style: str = "structured_cot"
 
 
 class LRModuleConfig(BaseModel):
     base_model_name_or_path: str = "OpenGVLab/InternVL3-2B"
-    output_dir: str = "checkpoints/internvl3_2b_lr"
-    merged_output_dir: str = "checkpoints/internvl3_2b_lr_fused"
+    output_dir: str = "checkpoints/internvl3_2b_lr_v2"
+    merged_output_dir: str = "checkpoints/internvl3_2b_lr_v2_fused"
     lora: LoRAConfig = Field(default_factory=LoRAConfig)
     data: DataPipelineConfig = Field(default_factory=DataPipelineConfig)
     curriculum_stages: List[CurriculumStageConfig] = Field(
@@ -98,6 +104,7 @@ class LRModuleConfig(BaseModel):
                 max_train_samples=50000,
                 max_val_samples=1000,
                 max_length=512,
+                rehearsal_ratio=0.10,
                 description="Stage 1: Multi-step structured deduction from rules and facts.",
             ),
             CurriculumStageConfig(
@@ -111,6 +118,7 @@ class LRModuleConfig(BaseModel):
                 max_train_samples=50000,
                 max_val_samples=1000,
                 max_length=512,
+                rehearsal_ratio=0.15,
                 description="Stage 2: Natural language First-Order Logic & human proof supervision.",
             ),
             CurriculumStageConfig(
@@ -121,9 +129,10 @@ class LRModuleConfig(BaseModel):
                 learning_rate=5e-5,
                 batch_size=16,
                 gradient_accumulation_steps=2,
-                max_train_samples=25000,
+                max_train_samples=40000,
                 max_val_samples=1000,
                 max_length=512,
+                rehearsal_ratio=0.10,
                 description="Stage 3 (Optional): Abductive inference from observations to hypotheses.",
             ),
         ]

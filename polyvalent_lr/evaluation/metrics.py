@@ -1,10 +1,45 @@
 import re
+from collections import Counter
 from typing import Dict, Any, List, Optional, Tuple
 from polyvalent_lr.data.normalizer import DatasetNormalizer
 
 
 class ReasoningMetrics:
     """Calculates accuracy, proof step validity, and reasoning depth from model outputs."""
+
+    @staticmethod
+    def detect_degeneracy(
+        response_text: str,
+        ngram_size: int = 8,
+        repeat_threshold: int = 5
+    ) -> Dict[str, Any]:
+        """Detects repetitive/looping generation (a common failure mode of collapsed models).
+
+        Returns whether the output is degenerate, the most repeated n-gram count, and a
+        token-repetition ratio.
+        """
+        text = (response_text or "").strip()
+        tokens = text.split()
+        total = len(tokens)
+        if total == 0:
+            return {"is_degenerate": False, "max_ngram_repeat": 0, "repetition_ratio": 0.0}
+
+        max_repeat = 0
+        for n in range(2, min(ngram_size, total) + 1):
+            grams = Counter(tuple(tokens[i:i + n]) for i in range(total - n + 1))
+            if grams:
+                max_repeat = max(max_repeat, max(grams.values()))
+
+        repetition_ratio = 1.0 - (len(set(tokens)) / total)
+        is_degenerate = (
+            max_repeat >= repeat_threshold
+            or (total >= 150 and repetition_ratio > 0.6)
+        )
+        return {
+            "is_degenerate": is_degenerate,
+            "max_ngram_repeat": max_repeat,
+            "repetition_ratio": round(repetition_ratio, 4)
+        }
 
     @staticmethod
     def extract_think_and_answer(response_text: str) -> Tuple[Optional[str], Optional[str]]:
@@ -75,7 +110,8 @@ class ReasoningMetrics:
             "gt_label": gt_label_norm,
             "has_reasoning_trace": has_reasoning_trace,
             "reasoning_depth": reasoning_depth,
-            "raw_prediction": predicted_text
+            "raw_prediction": predicted_text,
+            **cls.detect_degeneracy(predicted_text)
         }
 
     @classmethod
@@ -88,10 +124,12 @@ class ReasoningMetrics:
         correct = sum(1 for r in eval_results if r["exact_match"])
         with_trace = sum(1 for r in eval_results if r["has_reasoning_trace"])
         avg_depth = sum(r["reasoning_depth"] for r in eval_results) / total
+        degenerate = sum(1 for r in eval_results if r.get("is_degenerate"))
 
         return {
             "accuracy": (correct / total) * 100.0,
             "reasoning_trace_rate": (with_trace / total) * 100.0,
             "avg_reasoning_depth": avg_depth,
+            "degenerate_rate": (degenerate / total) * 100.0,
             "total_examples": total
         }

@@ -2,6 +2,7 @@ import re
 from typing import Dict, Any, List, Optional, Tuple, Union
 from polyvalent_lr.config import DatasetSource, LogicTaskType
 from polyvalent_lr.data.schema import LogicalExample, ProofStep
+from polyvalent_lr.data.sanitize import is_symbolic_text
 
 
 class DatasetNormalizer:
@@ -24,19 +25,34 @@ class DatasetNormalizer:
 
     @classmethod
     def parse_proof_intermediates(cls, proof_with_intermediates: List[Dict[str, Any]]) -> str:
-        """Parses ProofWriter's proofsWithIntermediates into human-readable multi-step reasoning traces."""
+        """Parses ProofWriter's proofsWithIntermediates into human-readable multi-step reasoning traces.
+
+        Only the natural-language ``text`` of each intermediate is retained. The raw symbolic
+        ``representation`` (triple/rule symbol soup) is intentionally discarded because it is
+        not valid supervision and trains the model to emit meaningless tokens.
+        """
         if not proof_with_intermediates:
             return ""
-        
-        trace_lines = []
+
+        trace_lines: List[str] = []
         for p_obj in proof_with_intermediates:
+            if not isinstance(p_obj, dict):
+                continue
             intermediates = p_obj.get("intermediates", {})
-            rep = p_obj.get("representation", "")
-            if intermediates and isinstance(intermediates, dict):
-                for int_key, int_val in intermediates.items():
-                    int_text = int_val.get("text", "") if isinstance(int_val, dict) else str(int_val)
-                    trace_lines.append(f"Derived intermediate fact: {int_text}")
-            trace_lines.append(f"Proof derivation structure: {rep}")
+
+            if isinstance(intermediates, dict):
+                values = intermediates.values()
+            elif isinstance(intermediates, list):
+                values = intermediates
+            else:
+                values = []
+
+            for int_val in values:
+                int_text = int_val.get("text", "") if isinstance(int_val, dict) else str(int_val)
+                int_text = (int_text or "").strip()
+                if int_text and not is_symbolic_text(int_text):
+                    trace_lines.append(int_text)
+
         return "\n".join(trace_lines)
 
     @classmethod
@@ -158,9 +174,20 @@ class DatasetNormalizer:
             
             # For abductive reasoning: Given rules + facts + observation -> predict missing fact
             for idx, ans_obj in enumerate(answers):
-                missing_fact = ans_obj.get("text", "")
+                missing_fact = (ans_obj.get("text", "") or "").strip()
                 proof_str = ans_obj.get("proof", "")
                 q_dep = ans_obj.get("QDep", 1)
+
+                # Skip symbolic/empty targets: they are not valid natural-language supervision.
+                if not missing_fact or is_symbolic_text(missing_fact):
+                    continue
+
+                proof_trace = (
+                    f"The observed statement '{obs_question}' is explained by the missing fact: "
+                    f"'{missing_fact}'."
+                )
+                if proof_str and not is_symbolic_text(proof_str):
+                    proof_trace = f"{proof_trace} {proof_str.strip()}"
 
                 ex = LogicalExample(
                     id=f"pw_abduct_{theory_id}_{mf_id}_{idx}",
@@ -168,9 +195,9 @@ class DatasetNormalizer:
                     source=DatasetSource.ABDUCTION_RULES,
                     task_type=LogicTaskType.ABDUCTION,
                     premises=premises + [f"Observed: {obs_question}"],
-                    hypothesis_or_query=f"Hypothesize missing fact: {missing_fact}",
-                    proof_trace_text=f"Missing fact '{missing_fact}' completes proof: {proof_str}",
-                    label="True",
+                    hypothesis_or_query="Hypothesize the most plausible missing fact that explains the observation.",
+                    proof_trace_text=proof_trace,
+                    label=missing_fact,
                     metadata={"depth": q_dep, "target_question": obs_question, "missing_fact": missing_fact}
                 )
                 examples.append(ex)
@@ -251,12 +278,23 @@ class DatasetNormalizer:
         context_str = item.get("context", "")
         if not context_str and "premises" in item:
             context_str = " ".join(item["premises"]) if isinstance(item["premises"], list) else str(item["premises"])
-            
-        # Parse context into premise sentences
+
+        # Parse context into premise sentences. Split only on real sentence boundaries
+        # (newlines/semicolons, or '. ' followed by a capital) so that periods inside
+        # formal/symbolic expressions are not destroyed. Symbolic-soup lines are dropped.
         if context_str:
-            premises = [p.strip() + "." for p in context_str.split(".") if p.strip()]
+            parts = re.split(r"\s*(?:\n|;)\s*", str(context_str))
+            if len(parts) <= 1:
+                parts = re.split(r"(?<=[.!?])\s+(?=[A-Z0-9\"'(])", str(context_str))
+            premises = []
+            for p in parts:
+                p = p.strip()
+                if not p or is_symbolic_text(p):
+                    continue
+                premises.append(p if p.endswith((".", "!", "?")) else p + ".")
         else:
-            premises = [str(p).strip() for p in item.get("context_rules", []) + item.get("observations", []) if str(p).strip()]
+            raw_premises = list(item.get("context_rules", [])) + list(item.get("observations", []))
+            premises = [str(p).strip() for p in raw_premises if str(p).strip() and not is_symbolic_text(p)]
 
         group_id = f"abduct_ctx_{raw_id}"
 
@@ -266,9 +304,13 @@ class DatasetNormalizer:
         if questions and isinstance(questions, list):
             for idx, q_obj in enumerate(questions):
                 q_id = q_obj.get("id", f"{raw_id}-Q{idx+1}")
-                obs_text = q_obj.get("text", "")
-                abducted_explanation = q_obj.get("label", "")
+                obs_text = (q_obj.get("text", "") or "").strip()
+                abducted_explanation = (q_obj.get("label", "") or "").strip()
                 q_cat = q_obj.get("QCat", "0")
+
+                # Skip empty or symbolic targets: they are not valid natural-language supervision.
+                if not abducted_explanation or is_symbolic_text(abducted_explanation):
+                    continue
 
                 ex = LogicalExample(
                     id=f"abduct_{q_id}",
@@ -276,9 +318,12 @@ class DatasetNormalizer:
                     source=DatasetSource.ABDUCTION_RULES,
                     task_type=LogicTaskType.ABDUCTION,
                     premises=premises + [f"Observed fact: {obs_text}"],
-                    hypothesis_or_query=f"Hypothesize the missing explanation: {abducted_explanation}",
-                    proof_trace_text=f"Given observation '{obs_text}' and context rules, the missing explanation is: '{abducted_explanation}'.",
-                    label=abducted_explanation if abducted_explanation in ["True", "False", "Uncertain"] else "True",
+                    hypothesis_or_query="Hypothesize the most plausible missing explanation that accounts for the observation.",
+                    proof_trace_text=(
+                        f"The observation '{obs_text}' is most plausibly explained by: "
+                        f"'{abducted_explanation}'."
+                    ),
+                    label=abducted_explanation,
                     metadata={
                         "theory_id": raw_id,
                         "question_id": q_id,
@@ -292,20 +337,50 @@ class DatasetNormalizer:
             # Flat format fallback
             q_text = item.get("question", item.get("candidate_hypothesis", item.get("explanation", "")))
             q_label = item.get("label", item.get("plausibility", "True"))
-            ex = LogicalExample(
-                id=f"abduct_{raw_id}_0",
-                group_id=group_id,
-                source=DatasetSource.ABDUCTION_RULES,
-                task_type=LogicTaskType.ABDUCTION,
-                premises=premises,
-                hypothesis_or_query=q_text,
-                proof_trace_text=item.get("abductive_chain", None),
-                label=cls.normalize_label(q_label),
-                metadata={"context_id": raw_id}
-            )
-            examples.append(ex)
+            if q_text and not is_symbolic_text(q_text):
+                ex = LogicalExample(
+                    id=f"abduct_{raw_id}_0",
+                    group_id=group_id,
+                    source=DatasetSource.ABDUCTION_RULES,
+                    task_type=LogicTaskType.ABDUCTION,
+                    premises=premises,
+                    hypothesis_or_query=q_text,
+                    proof_trace_text=item.get("abductive_chain", None),
+                    label=cls.normalize_label(q_label),
+                    metadata={"context_id": raw_id}
+                )
+                examples.append(ex)
 
         return examples
+
+    @classmethod
+    def normalize_dolly(cls, item: Dict[str, Any], index: int = 0) -> Optional[LogicalExample]:
+        """Normalizes a databricks-dolly-15k record into a general-instruction rehearsal example.
+
+        Rehearsal examples use the plain (non-<think>) chat format so the model learns to
+        branch: logic-format system prompt -> structured proof; otherwise -> normal chat.
+        """
+        instruction = (item.get("instruction", "") or "").strip()
+        context = (item.get("context", "") or "").strip()
+        response = (item.get("response", "") or "").strip()
+        if not instruction or not response:
+            return None
+
+        user_query = instruction
+        if context:
+            user_query = f"{instruction}\n\nContext:\n{context}"
+
+        return LogicalExample(
+            id=f"dolly_{index}",
+            group_id=f"dolly_{index}",
+            source=DatasetSource.REHEARSAL,
+            task_type=LogicTaskType.GENERAL,
+            premises=[],
+            hypothesis_or_query=user_query,
+            proof_trace_text=response,
+            label="Response",
+            metadata={"category": item.get("category", "general")},
+        )
 
     @classmethod
     def normalize_logicbench(cls, item: Dict[str, Any], metadata: Optional[Dict[str, Any]] = None) -> LogicalExample:

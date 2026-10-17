@@ -8,6 +8,7 @@ from polyvalent_lr.config import DatasetSource, LogicTaskType, UnseenBenchmark
 from polyvalent_lr.data.schema import LogicalExample, ProofStep
 from polyvalent_lr.data.normalizer import DatasetNormalizer
 from polyvalent_lr.data.dedup import GroupAwareDataSplitter
+from polyvalent_lr.data.sanitize import sanitize_examples, sanitize_report_string
 
 
 def generate_starter_datasets(raw_dir: Path, benchmark_dir: Path):
@@ -338,8 +339,16 @@ def main():
         DatasetSource.ABDUCTION_RULES: abduct_examples
     }
 
+    # Sanitize: drop symbolic-soup targets/premises (triple/rule token soup) and dedup
+    # by (prompt, target) to eliminate the corrupted supervision that collapsed v1.
+    for source, examples in dataset_map.items():
+        clean, report = sanitize_examples(examples)
+        print(sanitize_report_string(source.value, report))
+        dataset_map[source] = clean
+
     for source, examples in dataset_map.items():
         if not examples:
+            print(f"[{source.value}] No clean examples remain after sanitization; skipping.")
             continue
         train_ex, val_ex = GroupAwareDataSplitter.split_by_group(examples, val_ratio=args.val_ratio)
         print(f"[{source.value}] Partitioned {len(examples)} examples -> Train: {len(train_ex)}, Val: {len(val_ex)}")

@@ -102,6 +102,22 @@ class CurriculumManager:
 
     def __init__(self, processed_data_dir: str):
         self.data_dir = Path(processed_data_dir)
+        self._rehearsal_cache: Optional[List[LogicalExample]] = None
+
+    def _load_rehearsal(self) -> List[LogicalExample]:
+        """Loads (and caches) the general-instruction rehearsal set, if present."""
+        if self._rehearsal_cache is not None:
+            return self._rehearsal_cache
+
+        rehearsal_file = self.data_dir / "Rehearsal_train.jsonl"
+        examples: List[LogicalExample] = []
+        if rehearsal_file.exists():
+            with open(rehearsal_file, "r", encoding="utf-8") as f:
+                for line in f:
+                    if line.strip():
+                        examples.append(LogicalExample(**json.loads(line)))
+        self._rehearsal_cache = examples
+        return examples
 
     def load_stage_data(self, stage_config: CurriculumStageConfig) -> Tuple[List[LogicalExample], List[LogicalExample]]:
         """Loads train and dev examples with optional balanced subsampling for fast training."""
@@ -141,5 +157,25 @@ class CurriculumManager:
             val_examples = [val_examples[i] for i in sampled_val_indices]
         else:
             print(f"[CurriculumManager] Full validation dataset: {len(val_examples):,} examples.")
+
+        # Interleave general-instruction rehearsal data to prevent catastrophic forgetting.
+        ratio = getattr(stage_config, "rehearsal_ratio", 0.0) or 0.0
+        if ratio > 0.0 and train_examples:
+            rehearsal = self._load_rehearsal()
+            if rehearsal:
+                n_rehearsal = int(len(train_examples) * ratio / max(1e-6, (1.0 - ratio)))
+                n_rehearsal = min(n_rehearsal, len(rehearsal))
+                if n_rehearsal > 0:
+                    random.seed(42)
+                    rehearsal_sample = random.sample(rehearsal, n_rehearsal)
+                    combined = train_examples + rehearsal_sample
+                    random.shuffle(combined)
+                    print(
+                        f"[CurriculumManager] Interleaved {n_rehearsal:,} rehearsal examples "
+                        f"({ratio:.0%}) into {len(train_examples):,} logic examples."
+                    )
+                    train_examples = combined
+            else:
+                print("[CurriculumManager] rehearsal_ratio>0 but no Rehearsal_train.jsonl found; training without rehearsal.")
 
         return train_examples, val_examples
