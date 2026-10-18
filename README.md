@@ -105,6 +105,37 @@ To chat with the base model + LoRA adapter instead of the fused checkpoint:
 python scripts/chat_ui.py --adapter_dir checkpoints/internvl3_2b_lr_v2/final_lr_lora
 ```
 
+### 6. Build the Two Model Variants (base kept untouched)
+Creates two self-contained copies that both derive from the *same* base model (the original
+base is never modified):
+
+- `models/lr_adapter/` — full copy of the base + the LoRA adapter in `adapter/`
+  (loaded as base **+ adapter** at runtime).
+- `models/lr_merged/` — full copy of the base with the adapter **merged** into its weights
+  (standalone, no adapter needed).
+
+```bash
+python scripts/build_model_variants.py
+```
+Useful flags: `--base_model`, `--adapter_dir`, `--adapter_output`, `--merged_output`,
+`--verify_tolerance`, `--verify_fp32`, `--skip_adapter`, `--skip_merged`, `--no_verify`.
+The script asserts the source base's `model.safetensors` signature is unchanged and (by
+default) checks that base+adapter and merged produce equivalent logits (bf16 tolerance ~3.0;
+use `--verify_fp32` for a tight 1e-3 check).
+
+### 7. Compare Both Models Side-by-Side (Chat UI)
+A zero-dependency web UI that loads **both** variants and answers every prompt in two
+columns, so you can compare base+adapter vs merged:
+```bash
+python scripts/chat_ui_compare.py
+```
+Then open `http://127.0.0.1:8006`. Flags: `--model_a` / `--adapter_a` / `--label_a`,
+`--model_b` / `--adapter_b` / `--label_b`, `--port`, `--host`, `--device`, `--dtype`,
+and `--self_test` (load both, generate one answer each, exit).
+
+Adapters are auto-detected from a model directory's `adapter/` subfolder (or its top level),
+so `models/lr_adapter` is loaded as base + LoRA automatically.
+
 ---
 
 ## 🧪 Running Tests

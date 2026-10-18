@@ -49,6 +49,9 @@ datasets/
 # Keep benchmark folder tracked if needed
 data/benchmarks/
 
+# Local model copies produced by scripts/build_model_variants.py
+models/
+
 # Model Checkpoints & Adapters
 checkpoints/
 *.pt
