@@ -138,6 +138,13 @@ so `models/lr_adapter` is loaded as base + LoRA automatically.
 
 ---
 
+## 📄 Research Notes
+The current approach (data pipeline, v2 recipe, packaging, and a raw side-by-side
+behavioural sample of both variants with observations and next steps) is documented in
+[`docs/CURRENT_APPROACH.md`](docs/CURRENT_APPROACH.md).
+
+---
+
 ## 🧪 Running Tests
 Run the comprehensive unit test suite:
 ```bash
