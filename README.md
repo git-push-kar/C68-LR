@@ -57,6 +57,30 @@ per-stage sampling, early stopping with best-model selection:
 python scripts/train_lr_lora.py --output_dir checkpoints/internvl3_2b_lr_v2 --rank 16 --alpha 32
 ```
 
+Per-stage caps (`max_train_samples` = 50k / 50k / 40k) now apply by default; pass
+`--max_train_samples N` to override all stages, or `--full_dataset` to disable caps.
+Preview the resolved schedule without loading the model:
+```bash
+python scripts/train_lr_lora.py --dry_run --batch_size 4 --grad_accum 8
+```
+
+`--batch_size 4 --grad_accum 8` (effective batch 32) keeps the training footprint well
+under 24 GB so a remote session (e.g. AnyDesk) can stay open without VRAM paging, which
+otherwise slows the run by ~5x.
+
+Do **not** set `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` on Windows — it is
+unstable and can crash the CUDA caching allocator with `!handles_.at(i) INTERNAL ASSERT
+FAILED` during `model.to(cuda)`. The training/eval/chat entry points now force it off
+automatically.
+
+Redo/continue a single stage from a previously saved adapter (e.g. rerun only stage 3
+starting from the stage-2 adapter):
+```bash
+python scripts/train_lr_lora.py --output_dir checkpoints/internvl3_2b_lr_v2 --rank 16 --alpha 32 \
+  --batch_size 4 --grad_accum 8 --max_length 384 \
+  --only_stage 3 --init_adapter checkpoints/internvl3_2b_lr_v2/stage_2_proof_and_nl_fol/adapter
+```
+
 ### 3. Evaluate Unseen Benchmarks
 Evaluates the base model vs. base + LR LoRA on quarantined benchmarks:
 ```bash

@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, List, Optional
 import torch
 from transformers import Trainer, TrainingArguments, EarlyStoppingCallback
 
@@ -11,10 +11,11 @@ from polyvalent_lr.training.collator import LogicalDataCollator
 class StagedCurriculumTrainer:
     """Orchestrates high-throughput staged curriculum LoRA training for the Polyvalent LR module."""
 
-    def __init__(self, config: LRModuleConfig, model: Any, tokenizer: Any):
+    def __init__(self, config: LRModuleConfig, model: Any, tokenizer: Any, save_steps: Optional[int] = None):
         self.config = config
         self.model = model
         self.tokenizer = tokenizer
+        self.save_steps = save_steps if (save_steps and save_steps > 0) else None
         self.curriculum_manager = CurriculumManager(config.data.processed_data_dir)
 
         # Enable Ampere Tensor Core hardware acceleration (TF32)
@@ -63,6 +64,14 @@ class StagedCurriculumTrainer:
         use_bf16 = use_cuda and torch.cuda.is_bf16_supported()
         use_fp16 = use_cuda and not use_bf16
 
+        eval_strategy_key = "eval_strategy" if hasattr(TrainingArguments, "eval_strategy") else "evaluation_strategy"
+        if self.save_steps:
+            save_strategy = "steps"
+            eval_strategy = "steps" if val_dataset else "no"
+        else:
+            save_strategy = "epoch"
+            eval_strategy = "epoch" if val_dataset else "no"
+
         training_args_dict = {
             "output_dir": str(stage_output_dir),
             "num_train_epochs": stage_config.epochs,
@@ -73,8 +82,8 @@ class StagedCurriculumTrainer:
             "lr_scheduler_type": "cosine",
             "weight_decay": 0.01,
             "logging_steps": 25,
-            "save_strategy": "epoch",
-            "eval_strategy" if hasattr(TrainingArguments, "eval_strategy") else "evaluation_strategy": "epoch" if val_dataset else "no",
+            "save_strategy": save_strategy,
+            eval_strategy_key: eval_strategy,
             "load_best_model_at_end": bool(val_dataset),
             "metric_for_best_model": "eval_loss",
             "greater_is_better": False,
@@ -89,6 +98,11 @@ class StagedCurriculumTrainer:
             "remove_unused_columns": False,
             "report_to": "none"
         }
+
+        if self.save_steps:
+            training_args_dict["save_steps"] = self.save_steps
+            if val_dataset:
+                training_args_dict["eval_steps"] = self.save_steps
 
         training_args = TrainingArguments(**training_args_dict)
 
@@ -123,10 +137,20 @@ class StagedCurriculumTrainer:
             "adapter_dir": str(stage_adapter_dir)
         }
 
-    def run_full_curriculum(self) -> Dict[str, Any]:
-        """Runs all curriculum stages sequentially, accumulating adapter updates."""
+    def run_full_curriculum(self, stage_ids: Optional[List[int]] = None) -> Dict[str, Any]:
+        """Runs curriculum stages sequentially, accumulating adapter updates.
+
+        If stage_ids is provided, only the stages whose stage_id is in that set are run
+        (used to resume/redo a single stage from a previously saved adapter).
+        """
+        stages = self.config.curriculum_stages
+        if stage_ids is not None:
+            selected = set(stage_ids)
+            stages = [s for s in stages if s.stage_id in selected]
+            print(f"[Curriculum] Restricting run to stage(s): {sorted(selected)}")
+
         all_stage_results = []
-        for stage_cfg in self.config.curriculum_stages:
+        for stage_cfg in stages:
             res = self.train_stage(stage_cfg)
             all_stage_results.append(res)
 

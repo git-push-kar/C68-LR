@@ -1,11 +1,18 @@
 import argparse
 import json
+import os
 import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+# expandable_segments is unstable on Windows (crashes the CUDA caching allocator); force off
+# before torch reads PYTORCH_CUDA_ALLOC_CONF at import time.
+_conf = os.environ.get("PYTORCH_CUDA_ALLOC_CONF", "")
+if "expandable_segments:true" in _conf.replace(" ", "").lower():
+    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:False"
 
 import torch
 from transformers import TextIteratorStreamer

@@ -1,3 +1,12 @@
+import os
+
+# expandable_segments is unstable on Windows and can crash the CUDA caching allocator
+# ("!handles_.at(i) INTERNAL ASSERT FAILED at c10/cuda/CUDACachingAllocator.cpp").
+# Force it off before torch performs any CUDA allocation.
+_alloc_conf = os.environ.get("PYTORCH_CUDA_ALLOC_CONF", "")
+if "expandable_segments:true" in _alloc_conf.replace(" ", "").lower():
+    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:False"
+
 import torch
 import inspect
 import functools
@@ -119,6 +128,57 @@ def _remove_accelerate_hooks(model: Any) -> None:
         pass
 
 
+def _drop_device_map(model: Any) -> None:
+    """Removes accelerate's hf_device_map so Trainer treats the model as single-device."""
+    try:
+        if hasattr(model, "hf_device_map"):
+            delattr(model, "hf_device_map")
+    except Exception:
+        pass
+
+
+def _move_to_device_resilient(model: Any, device: str) -> Any:
+    """Moves a model to device, printing free VRAM and retrying once on a transient CUDA context error.
+
+    On Windows/WDDM a stale GPU context (e.g. a previous training process not fully torn down)
+    surfaces as 'CUDA driver error: unknown error' during .to(cuda). A small guarded retry with
+    a cache flush usually succeeds once the driver is idle.
+    """
+    import gc
+
+    def _free_vram_gb() -> float:
+        try:
+            free, _ = torch.cuda.mem_get_info()
+            return free / (1024**3)
+        except Exception:
+            return float("nan")
+
+    print(f"[InternVL Loader] Free VRAM before move: {_free_vram_gb():.2f} GB")
+
+    def _attempt():
+        gc.collect()
+        torch.cuda.empty_cache()
+        try:
+            torch.cuda.synchronize()
+        except Exception:
+            pass
+        return model.to(device)
+
+    try:
+        return _attempt()
+    except RuntimeError as exc:
+        msg = str(exc)
+        if "out of memory" in msg.lower():
+            raise
+        print(
+            f"[InternVL Loader] First .to('{device}') failed: {exc}\n"
+            f"[InternVL Loader] Retrying once after cache flush "
+            f"(free VRAM: {_free_vram_gb():.2f} GB). If this persists, another process "
+            f"is still using the GPU - stop it and run 'nvidia-smi' to confirm before relaunching."
+        )
+        return _attempt()
+
+
 def load_internvl_model_and_tokenizer(
     model_name_or_path: str,
     device: Optional[str] = None,
@@ -138,6 +198,15 @@ def load_internvl_model_and_tokenizer(
     # For evaluation, device_map="auto" is convenient; for training, device_map=None avoids Accelerate hook overhead
     if device_map is None and is_eval:
         device_map = "auto" if cuda_avail else "cpu"
+
+    # For single-GPU training, place weights directly on the GPU during loading instead of
+    # loading on CPU and calling model.to(cuda). The monolithic .to(cuda) intermittently
+    # fails on Windows/WDDM with "CUDA driver error: unknown error" / allocator asserts,
+    # whereas direct device_map placement (with low_cpu_mem_usage) is reliable.
+    direct_gpu_placement = False
+    if device_map is None and not is_eval and cuda_avail and device.startswith("cuda"):
+        device_map = {"": device if device.startswith("cuda:") else 0}
+        direct_gpu_placement = True
 
     if torch_dtype is None:
         if cuda_avail:
@@ -185,7 +254,12 @@ def load_internvl_model_and_tokenizer(
     # If device_map was None and cuda is available, move model directly to target device
     if device_map is None and cuda_avail and device.startswith("cuda"):
         _remove_accelerate_hooks(model)
-        model = model.to(device)
+        model = _move_to_device_resilient(model, device)
+    elif direct_gpu_placement:
+        # Weights were already placed on the GPU during loading; strip the accelerate
+        # dispatch hooks and the device map so Trainer sees a normal single-device model.
+        _remove_accelerate_hooks(model)
+        _drop_device_map(model)
 
     # Ensure model has all_tied_weights_keys attribute if accessed directly
     if not hasattr(model, "all_tied_weights_keys"):
