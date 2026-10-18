@@ -41,6 +41,14 @@ LOGIC_FORMAT = (
 
 STOP_STRINGS = ["<|im_end|>", "<|im_start|>"]
 
+try:
+    from polyvalent_lr.reasoning_v3 import decoding as v3_decoding
+    from polyvalent_lr.reasoning_v3 import prompts as v3_prompts
+    V3_SYSTEM = v3_prompts.inference_system_prompt()
+except Exception:  # pragma: no cover - v3 package is optional
+    v3_decoding = None
+    V3_SYSTEM = DEFAULT_SYSTEM
+
 
 def build_prompt(messages, system_prompt, logic_mode):
     """Builds an InternVL/Qwen ChatML prompt matching the LR training format."""
@@ -129,7 +137,19 @@ class Runtime:
             raise RuntimeError(errors["error"])
 
     def generate_text(self, messages, system_prompt, logic_mode, max_new_tokens,
-                      temperature, top_p, repetition_penalty, no_repeat_ngram_size=3):
+                      temperature, top_p, repetition_penalty, no_repeat_ngram_size=3,
+                      self_consistency=1):
+        if self_consistency and self_consistency > 1:
+            samples = [
+                "".join(self.iter_generation(
+                    messages, system_prompt, logic_mode,
+                    max_new_tokens, temperature, top_p, repetition_penalty, no_repeat_ngram_size,
+                ))
+                for _ in range(self_consistency)
+            ]
+            if v3_decoding is not None:
+                return v3_decoding.majority_vote(samples)
+            return samples[0]
         return "".join(
             self.iter_generation(
                 messages, system_prompt, logic_mode,
@@ -460,11 +480,22 @@ class CompareHandler(BaseHTTPRequestHandler):
         top_p = float(payload.get("top_p", 1.0))
         repetition_penalty = float(payload.get("repetition_penalty", 1.1))
         no_repeat_ngram_size = int(payload.get("no_repeat_ngram_size", 3))
+        self_consistency = int(payload.get("self_consistency", STATE.get("self_consistency", 1)))
+        # Self-consistency needs sampling; if the UI left temp at 0, use the preset default.
+        if self_consistency > 1 and temperature <= 0.0:
+            temperature = float(STATE.get("default_temperature", 0.6))
 
-        self._stream_response(
-            runtime, messages, system_prompt, logic_mode,
-            max_new_tokens, temperature, top_p, repetition_penalty, no_repeat_ngram_size,
-        )
+        if self_consistency and self_consistency > 1:
+            self._stream_voted(
+                runtime, messages, system_prompt, logic_mode,
+                max_new_tokens, temperature, top_p, repetition_penalty,
+                no_repeat_ngram_size, self_consistency,
+            )
+        else:
+            self._stream_response(
+                runtime, messages, system_prompt, logic_mode,
+                max_new_tokens, temperature, top_p, repetition_penalty, no_repeat_ngram_size,
+            )
 
     def _stream_response(self, runtime, messages, system_prompt, logic_mode,
                          max_new_tokens, temperature, top_p, repetition_penalty,
@@ -480,6 +511,38 @@ class CompareHandler(BaseHTTPRequestHandler):
                 max_new_tokens, temperature, top_p, repetition_penalty, no_repeat_ngram_size,
             ):
                 data = json.dumps({"type": "token", "text": chunk})
+                self.wfile.write(f"data: {data}\n\n".encode("utf-8"))
+                self.wfile.flush()
+            self.wfile.write(b'data: {"type": "done"}\n\n')
+            self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            pass
+        except Exception as exc:
+            try:
+                data = json.dumps({"type": "error", "text": str(exc)})
+                self.wfile.write(f"data: {data}\n\n".encode("utf-8"))
+                self.wfile.flush()
+            except Exception:
+                pass
+
+    def _stream_voted(self, runtime, messages, system_prompt, logic_mode,
+                      max_new_tokens, temperature, top_p, repetition_penalty,
+                      no_repeat_ngram_size, self_consistency):
+        """Self-consistency path: sample N, majority-vote, stream the winner."""
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        try:
+            text = runtime.generate_text(
+                messages, system_prompt, logic_mode,
+                max_new_tokens, temperature, top_p, repetition_penalty,
+                no_repeat_ngram_size, self_consistency=self_consistency,
+            )
+            note = f"[self-consistency: {self_consistency} samples, majority-voted]\n\n"
+            for piece in (note + text,):
+                data = json.dumps({"type": "token", "text": piece})
                 self.wfile.write(f"data: {data}\n\n".encode("utf-8"))
                 self.wfile.flush()
             self.wfile.write(b'data: {"type": "done"}\n\n')
@@ -513,10 +576,16 @@ def main():
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--device_map", type=str, default="auto" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--dtype", type=str, default="auto", choices=["auto", "bfloat16", "fp16", "float32"])
+    parser.add_argument("--preset", type=str, default="v3", choices=["v2", "v3"],
+                        help="Decoding preset. v3 = T=0.6, rep 1.1 (+ optional self-consistency).")
+    parser.add_argument("--self_consistency", type=int, default=1,
+                        help="Sample this many completions and majority-vote the final table (v3).")
     parser.add_argument("--self_test", action="store_true",
                         help="Load both models, run one generation on each, print, then exit.")
     args = parser.parse_args()
     args.torch_dtype = _resolve_dtype(args.dtype)
+    STATE["self_consistency"] = max(1, args.self_consistency)
+    STATE["default_temperature"] = 0.6 if args.preset == "v3" else 0.0
 
     if not Path(args.model_a).exists():
         parser.error(f"model A not found: {args.model_a}")

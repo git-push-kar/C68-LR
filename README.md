@@ -2,9 +2,38 @@
 
 This module implements the complete Logical Reasoning pipeline for **InternVL3-2B** based on [`Polyvalent_LR_Integration_Note.md`](Polyvalent_LR_Integration_Note.md).
 
+> **Status:** The original **v2** approach is **quarantined** (it did not fix the
+> model's degeneration) — see [`docs/quarantine/v2/`](docs/quarantine/v2/README.md).
+> The active work is the **v3 reasoning-repair** plan:
+> [`docs/v3/RUNBOOK.md`](docs/v3/RUNBOOK.md) (prepared, not yet run).
+
 ---
 
-## 🏗️ Architecture & Pipeline Overview
+## 🧭 v3 Reasoning Repair (active)
+
+New, self-contained pipeline (base model unchanged; LoRA kept external):
+
+```text
+A  grid/ordering puzzles      solver-generated traces (CPU)        45%
+B  logic + NL rationale       Qwen2.5-32B teacher (WSL2+vLLM)       20%
+C  commonsense / implicit-goal Qwen teacher (2-pass)                10%
+D  Dolly rehearsal            existing processed data               10%
+E  ProofWriter/FOLIO labels   existing processed data               15%
+        │
+        ▼  SFT (LoRA r64/α128, assistant-only masking incl. EOS)
+checkpoints/internvl3_2b_reasoning_v3/sft
+        │
+        ▼  rejection sampling (solver-verified) → retrain @5e-5
+checkpoints/internvl3_2b_reasoning_v3/rs
+        │
+        ▼  package: models_v3/{adapter,merged} + compare UI (self-consistency)
+```
+
+See [`docs/v3/RUNBOOK.md`](docs/v3/RUNBOOK.md) for stage-by-stage commands.
+
+---
+
+## 🏗️ Architecture & Pipeline Overview (legacy v2, quarantined)
 
 ```text
 1. Data Ingestion & Splitting (ProofWriter, P-FOLIO, FOLIO, AbductionRules)
