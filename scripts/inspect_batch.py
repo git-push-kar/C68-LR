@@ -14,6 +14,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from polyvalent_lr import config_v3
 from polyvalent_lr.reasoning_v3.data import encode_supervised, read_jsonl
 
+try:  # the Windows console defaults to cp1252 and chokes on unicode traces
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
+
+def _safe(text: str) -> str:
+    return text.encode("ascii", "replace").decode("ascii")
+
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Inspect assistant-only masking.")
@@ -42,8 +51,8 @@ def main() -> None:
         print("=" * 80)
         print(f"[{i}] category={ex.category} task={ex.task}  (prompt {n_prompt} tok masked, "
               f"{len(supervised)} supervised)")
-        print(f"    prompt   : {tokenizer.decode(ids[:n_prompt], skip_special_tokens=False)[:400]!r}")
-        print(f"    supervised: {tokenizer.decode(supervised, skip_special_tokens=False)[:400]!r}")
+        print(f"    prompt   : {_safe(tokenizer.decode(ids[:n_prompt], skip_special_tokens=False)[:400])!r}")
+        print(f"    supervised: {_safe(tokenizer.decode(supervised, skip_special_tokens=False)[:400])!r}")
         print(f"    ends_with_eos: {bool(supervised) and supervised[-1] == eos_id}")
 
     for ex in examples:

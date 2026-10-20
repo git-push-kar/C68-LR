@@ -33,6 +33,10 @@ DEFAULT_SYSTEM = (
     "Solve the problem by validating rules and facts systematically."
 )
 
+# Set from --preset in main(); "v3" uses the <reasoning>/<answer> contract the
+# adapter was trained on and must NOT inject the v2  thinking format.
+PRESET = "v3"
+
 LOGIC_FORMAT = (
     "Format your response as:\n"
     "<think>\n[Step-by-step deduction/proof steps]\n</think>\n"
@@ -52,9 +56,12 @@ except Exception:  # pragma: no cover - v3 package is optional
 
 def build_prompt(messages, system_prompt, logic_mode):
     """Builds an InternVL/Qwen ChatML prompt matching the LR training format."""
-    system_text = (system_prompt or DEFAULT_SYSTEM).strip()
-    if logic_mode:
-        system_text = f"{system_text}\n\n{LOGIC_FORMAT}"
+    if PRESET == "v3":
+        system_text = V3_SYSTEM
+    else:
+        system_text = (system_prompt or DEFAULT_SYSTEM).strip()
+        if logic_mode:
+            system_text = f"{system_text}\n\n{LOGIC_FORMAT}"
 
     parts = [f"<|im_start|>system\n{system_text}<|im_end|>\n"]
     for msg in messages:
@@ -107,7 +114,8 @@ class Runtime:
             "use_cache": True,
             "repetition_penalty": float(repetition_penalty),
             "no_repeat_ngram_size": int(no_repeat_ngram_size),
-            "stop_strings": STOP_STRINGS,
+            "stop_strings": (["</answer>", "<|im_end|>", "<|im_start|>"]
+                             if PRESET == "v3" else STOP_STRINGS),
             "tokenizer": tokenizer,
             "streamer": streamer,
         }
@@ -302,8 +310,9 @@ function escapeHtml(s){return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','
 function formatContent(s){
   let e=escapeHtml(s);
   e=e.replace(/&lt;think&gt;([\s\S]*?)&lt;\/think&gt;/g,(m,p)=>'<div class="think"><div class="think-h">reasoning</div>'+p.trim()+'</div>');
+  e=e.replace(/&lt;reasoning&gt;([\s\S]*?)&lt;\/reasoning&gt;/g,(m,p)=>'<div class="think"><div class="think-h">reasoning</div>'+p.trim()+'</div>');
   e=e.replace(/&lt;answer&gt;([\s\S]*?)&lt;\/answer&gt;/g,(m,p)=>'<div class="answer"><span class="lbl">answer</span>'+p.trim()+'</div>');
-  e=e.replace(/&lt;\/?think&gt;/g,'').replace(/&lt;\/?answer&gt;/g,'');
+  e=e.replace(/&lt;\/?(?:think|reasoning)&gt;/g,'').replace(/&lt;\/?answer&gt;/g,'');
   return e;
 }
 
@@ -583,6 +592,8 @@ def main():
     parser.add_argument("--self_test", action="store_true",
                         help="Load both models, run one generation on each, print, then exit.")
     args = parser.parse_args()
+    global PRESET
+    PRESET = args.preset
     args.torch_dtype = _resolve_dtype(args.dtype)
     STATE["self_consistency"] = max(1, args.self_consistency)
     STATE["default_temperature"] = 0.6 if args.preset == "v3" else 0.0
@@ -599,8 +610,10 @@ def main():
     if args.self_test:
         print("[LR-Compare] Self-test generation...")
         q = [{"role": "user", "content": "All cats are mammals. Tom is a cat. Is Tom a mammal?"}]
+        sys_prompt = V3_SYSTEM if args.preset == "v3" else DEFAULT_SYSTEM
+        logic = args.preset != "v3"
         for key in STATE["order"]:
-            out = STATE["runtimes"][key].generate_text(q, DEFAULT_SYSTEM, True, 64, 0.0, 1.0, 1.1)
+            out = STATE["runtimes"][key].generate_text(q, sys_prompt, logic, 160, 0.0, 1.0, 1.1)
             print(f"\n--- {STATE['runtimes'][key].label} ---\n{out}")
         return
 

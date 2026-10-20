@@ -131,7 +131,7 @@ class DecodingV3:
     repetition_penalty: float = 1.1
     max_new_tokens: int = 768
     self_consistency: int = 5        # sample N then majority-vote the final table
-    stop_strings: List[str] = field(default_factory=lambda: ["<|im_end|>", "<|im_start|>"])
+    stop_strings: List[str] = field(default_factory=lambda: ["</answer>", "<|im_end|>", "<|im_start|>"])
 
 
 # ==============================================================================

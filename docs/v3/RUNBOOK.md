@@ -1,8 +1,12 @@
 # v3 Reasoning Repair — Stage-by-Stage Runbook
 
-Prepared but **not executed**. The v2 approach is quarantined (see
-`docs/quarantine/v2/`). v3 uses the *same* local base model and keeps the LoRA
-adapter **external**.
+Executed 2026-10-19/20. Results, timings, metrics and the WSL2/vLLM blocker are
+recorded in [`EXECUTION_LOG.md`](EXECUTION_LOG.md). Stages 1b/1c (teacher data)
+and 3 (rejection sampling) remain blocked until WSL2 is enabled (admin + reboot);
+Set A/D/E, SFT, evaluation, packaging and the compare UI have all run.
+
+The v2 approach is quarantined (see `docs/quarantine/v2/`). v3 uses the *same*
+local base model and keeps the LoRA adapter **external**.
 
 - Base model (unmodified): `C:\Users\Admin\Desktop\LY_C68\deepfake_project\models\InternVL3-2B`
 - Windows venv: `.\venv\Scripts\python.exe` (torch 2.14 / transformers 4.47 — SFT, eval, chat)

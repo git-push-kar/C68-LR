@@ -18,6 +18,13 @@ SYSTEM_REASONING = (
     "each desk after every clue. Keep the final answer concise and complete."
 )
 
+SYSTEM_LOGIC = (
+    "You are a rigorous logical reasoning engine. Work through the problem "
+    "step by step inside <reasoning>...</reasoning>, then give the final answer "
+    "inside <answer>...</answer>. State only conclusions that follow from the "
+    "given premises."
+)
+
 SYSTEM_CHAT = "You are a helpful, knowledgeable AI assistant."
 
 REASONING_OPEN = "<reasoning>"

@@ -21,7 +21,17 @@ from polyvalent_lr.reasoning_v3.data import (
 from polyvalent_lr.reasoning_v3 import prompts
 
 PROCESSED = Path("data/processed")
-DEFAULT_TRAINING_SYSTEM = prompts.SYSTEM_REASONING
+DEFAULT_TRAINING_SYSTEM = prompts.SYSTEM_LOGIC
+
+_JUNK_MARKERS = ("[@", "[CWA", "CWA.", "deepest failure", "(FAIL)")
+
+
+def _clean_trace(raw: str, label: str) -> str:
+    """Drop dataset-internal debug strings; otherwise keep the gold trace."""
+    text = (raw or "").strip()
+    if not text or len(text) > 800 or any(m in text for m in _JUNK_MARKERS):
+        return f"Combining the premises, the answer is: {label}."
+    return text
 
 
 def _to_chat_rehearsal(rec: Dict) -> InstructionExample:
@@ -38,7 +48,7 @@ def _to_label_example(rec: Dict) -> InstructionExample:
     premises = "\n".join(f"- {p}" for p in rec.get("premises", []))
     query = (rec.get("hypothesis_or_query") or "").strip()
     label = str(rec.get("label", "")).strip()
-    reasoning = (rec.get("proof_trace_text") or "").strip() or "The answer follows from the premises."
+    reasoning = _clean_trace(rec.get("proof_trace_text") or "", label)
     user = (
         "Given the facts and rules (premises), decide whether the hypothesis is "
         "True, False, or Uncertain.\n\n"

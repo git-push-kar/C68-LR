@@ -112,7 +112,10 @@ def encode_supervised(
         target_ids = target_ids + [eos_id]
 
     if len(target_ids) >= max_length:
-        target_ids = target_ids[:max_length]
+        if eos_id is not None:
+            target_ids = target_ids[: max_length - 1] + [eos_id]
+        else:
+            target_ids = target_ids[:max_length]
         prompt_ids = []
     else:
         budget = max_length - len(target_ids)
@@ -205,30 +208,43 @@ def build_mix(
     mean_tok = {c: (sum(_approx_tokens(e) for e in v) / len(v)) if v else 1.0
                 for c, v in loaded.items()}
 
+    available = [c for c in set_dirs if loaded[c]]
+    if not available:
+        return [], [], {c: 0 for c in set_dirs}
+
+    # Weights are normalised over the sets that actually exist, so missing sets
+    # (e.g. a teacher set that has not been generated yet) do not leave the
+    # mixture under-filled.
+    eff = {c: max(0.0, float(weights.get(c, 0.0))) for c in available}
+    if sum(eff.values()) <= 0.0:
+        eff = {c: 1.0 for c in available}
+    wsum = sum(eff.values())
+    eff = {c: w / wsum for c, w in eff.items()}
+
+    budget = float(target_tokens)
     counts = {c: 0 for c in set_dirs}
-    remaining = dict(weights)
-    pool = [c for c in set_dirs if loaded[c]]
-    while pool and target_tokens > 0:
-        active = [c for c in pool if remaining[c] > 1e-9]
-        if not active:
-            active = pool  # redistribute uniformly among the remaining
-            share = 1.0 / len(active)
-            for c in active:
-                remaining[c] = share
-        wsum = sum(remaining[c] for c in active)
-        progressed = False
-        for c in list(active):
-            want_tokens = target_tokens * (remaining[c] / wsum)
-            want = int(want_tokens / mean_tok[c])
-            avail = len(loaded[c]) - counts[c]
-            take = min(want, avail)
-            if take > 0:
-                counts[c] += take
-                progressed = True
-            if counts[c] >= len(loaded[c]):
-                pool.remove(c)
-                remaining[c] = 0.0
-        if not progressed:
+    for c in available:
+        want = int((budget * eff[c]) / mean_tok[c])
+        counts[c] = min(want, len(loaded[c]))
+
+    used = sum(counts[c] * mean_tok[c] for c in available)
+    for _ in range(200):
+        if used >= 0.99 * budget:
+            break
+        spare = [c for c in available if counts[c] < len(loaded[c])]
+        if not spare:
+            break
+        deficit = budget - used
+        spare_w = sum(eff[c] for c in spare) or float(len(spare))
+        added_any = False
+        for c in spare:
+            share = (eff[c] if eff[c] > 0 else 1.0 / len(spare)) / spare_w
+            add = min(int((deficit * share) / mean_tok[c]), len(loaded[c]) - counts[c])
+            if add > 0:
+                counts[c] += add
+                used += add * mean_tok[c]
+                added_any = True
+        if not added_any:
             break
 
     train: List[InstructionExample] = []

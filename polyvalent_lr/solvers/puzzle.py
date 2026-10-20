@@ -110,16 +110,24 @@ class Puzzle:
         return "\n".join(rows)
 
     def render_trace(self) -> str:
-        """'Clue k -> what is now known per desk' trace, then the final table."""
+        """Compact derivation: only report desks that become fully determined.
+
+        The clue list already lives in the prompt, so it is not repeated here and
+        the final table is emitted by the ``<answer>`` block only. This keeps the
+        supervised target well inside the context budget.
+        """
         lines: List[str] = []
+        prev: Dict[int, Optional[tuple]] = {d: None for d in range(1, self.n + 1)}
         for k in range(1, len(self.clues) + 1):
-            prefix = self.clues[:k]
-            known = known_per_desk(self, prefix)
-            snapshot = _snapshot_text(known, self.n)
-            lines.append(f"Clue {k}: {self.clues[k - 1].text} \u2192 {snapshot}")
-        lines.append("")
-        lines.append("Final layout:")
-        lines.append(self.render_table())
+            known = known_per_desk(self, self.clues[:k], cap=500)
+            for d in range(1, self.n + 1):
+                vals = tuple(known[d][cat] for cat in CATEGORIES)
+                if all(v is not None for v in vals) and vals != prev[d]:
+                    prev[d] = vals
+                    person, domain, os_ = vals
+                    lines.append(f"Clue {k} fixes desk {d}: {person}, {domain}, {os_}.")
+        if not lines:
+            lines.append("Together the clues determine the layout uniquely.")
         return "\n".join(lines)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -410,48 +418,33 @@ def _same_solution(a: Dict[int, Dict[str, str]], b: Dict[int, Dict[str, str]]) -
 def _select_minimal_unique(
     candidates: List[Clue], people, domains, oses, n, solution, rng, budget
 ) -> Optional[List[Clue]]:
-    """Greedily build a (near-)minimal unique clue set, then drop redundants."""
-    # Bias toward attribute-fact clues, then relational.
-    strong = [c for c in candidates if c.kind in {"person_domain", "person_os", "domain_os"}]
-    medium = [c for c in candidates if c.kind in {"left_of", "next_to", "between", "not_desk_os"}]
+    """Build a unique clue set quickly.
+
+    Two absolute "anchor" clues are seeded first: they pin a couple of desks and
+    make the uniqueness proof cheap (without anchors the search over the three
+    permutations can explode). Remaining clues are added one at a time until the
+    solution is unique. Redundancy pruning is intentionally skipped — a cheap,
+    varied clue set is more valuable here than a minimal one.
+    """
     fixed = [c for c in candidates if c.kind.startswith("fixed_")]
-    for lst in (strong, medium, fixed):
+    links = [c for c in candidates if c.kind in {"person_domain", "person_os", "domain_os"}]
+    rel = [c for c in candidates if c.kind in {"left_of", "next_to", "between", "not_desk_os"}]
+    for lst in (fixed, links, rel):
         rng.shuffle(lst)
 
-    selected: List[Clue] = []
-    for c in strong + medium:
-        selected.append(c)
-        try:
-            if _is_unique(people, domains, oses, selected, n, solution, budget):
-                break
-        except BudgetExceeded:
-            return None
-    else:
-        # fall back to fixed clues (always makes it unique)
-        for c in fixed:
-            selected.append(c)
-            try:
-                if _is_unique(people, domains, oses, selected, n, solution, budget):
-                    break
-            except BudgetExceeded:
-                return None
-        else:
-            return None
+    n_anchor = 2 if n >= 4 else 1
+    selected: List[Clue] = list(fixed[:n_anchor])
 
-    # drop redundant clues
-    changed = True
-    while changed and len(selected) > 2:
-        changed = False
-        for c in list(selected):
-            trial = [x for x in selected if x is not c]
-            try:
-                if _is_unique(people, domains, oses, trial, n, solution, budget):
-                    selected = trial
-                    changed = True
-                    break
-            except BudgetExceeded:
-                continue
-    return selected
+    try:
+        if selected and _is_unique(people, domains, oses, selected, n, solution, budget):
+            return selected
+        for c in fixed[n_anchor:] + links + rel:
+            selected.append(c)
+            if _is_unique(people, domains, oses, selected, n, solution, budget):
+                return selected
+    except BudgetExceeded:
+        return None
+    return None
 
 
 def generate_puzzle(
