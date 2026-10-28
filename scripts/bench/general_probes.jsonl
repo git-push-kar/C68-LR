@@ -1,0 +1,30 @@
+{"id":"gen-01","prompt":"Summarize the plot of Romeo and Juliet in three sentences."}
+{"id":"gen-02","prompt":"Explain photosynthesis to a 10-year-old in two short paragraphs."}
+{"id":"gen-03","prompt":"Write a Python function that returns the factorial of a non-negative integer n."}
+{"id":"gen-04","prompt":"What is the difference between TCP and UDP? Give one example use case for each."}
+{"id":"gen-05","prompt":"Draft a polite email declining a meeting invitation because of a scheduling conflict."}
+{"id":"gen-06","prompt":"Explain why the sky is blue."}
+{"id":"gen-07","prompt":"Write a haiku about autumn."}
+{"id":"gen-08","prompt":"List three causes of World War I and explain each in one sentence."}
+{"id":"gen-09","prompt":"Convert 72 degrees Fahrenheit to Celsius and show the formula."}
+{"id":"gen-10","prompt":"Write a SQL query that finds the second highest salary in a table named employees."}
+{"id":"gen-11","prompt":"Explain the concept of opportunity cost with a concrete example."}
+{"id":"gen-12","prompt":"Summarize the water cycle in four steps."}
+{"id":"gen-13","prompt":"Write a short story about a robot who learns to paint."}
+{"id":"gen-14","prompt":"What are the main differences between Python lists and tuples?"}
+{"id":"gen-15","prompt":"Explain the Monty Hall problem and why switching doors is advantageous."}
+{"id":"gen-16","prompt":"Write a regular expression that matches a basic email address and explain its parts."}
+{"id":"gen-17","prompt":"Give a simple recipe for a cheese omelette."}
+{"id":"gen-18","prompt":"Explain the difference between genotype and phenotype."}
+{"id":"gen-19","prompt":"Write a Python function that checks whether a string is a palindrome."}
+{"id":"gen-20","prompt":"Describe four causes of inflation in bullet points."}
+{"id":"gen-21","prompt":"Translate 'Good morning, how are you?' into Spanish and French."}
+{"id":"gen-22","prompt":"Explain the historical significance of the Magna Carta."}
+{"id":"gen-23","prompt":"Write a four-line poem about the ocean."}
+{"id":"gen-24","prompt":"What is the time complexity of binary search, and why?"}
+{"id":"gen-25","prompt":"Explain how vaccines work in plain language."}
+{"id":"gen-26","prompt":"Give three practical tips for improving sleep hygiene."}
+{"id":"gen-27","prompt":"Write a JSON object representing a book with title, author, and publication year."}
+{"id":"gen-28","prompt":"Explain the difference between a stock and a bond."}
+{"id":"gen-29","prompt":"Summarize the theory of evolution by natural selection."}
+{"id":"gen-30","prompt":"Write a short dialogue between a customer and a barista ordering coffee."}

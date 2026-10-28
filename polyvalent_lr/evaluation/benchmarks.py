@@ -1,4 +1,5 @@
 import json
+from collections import Counter
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from tqdm import tqdm
@@ -31,6 +32,21 @@ class UnseenBenchmarkEvaluator:
             for line in f:
                 if line.strip():
                     examples.append(LogicalExample(**json.loads(line)))
+
+        # The old parser wrote one default-labelled example per release file
+        # (all True or all Uncertain).  Refuse those files instead of turning
+        # their degeneracy into a 0%/100% "result".
+        if examples:
+            label_counts = Counter(str(ex.label) for ex in examples)
+            majority_share = max(label_counts.values()) / len(examples)
+            if len(label_counts) < 2 or majority_share > 0.70:
+                raise ValueError(
+                    f"{file_path} is not a usable benchmark: "
+                    f"{len(label_counts)} label(s), majority {majority_share:.1%}. "
+                    "It looks like the legacy placeholder output. Use "
+                    "scripts/bench/build_real_benchmarks.py and "
+                    "scripts/bench/run_bench.py with data/benchmarks_real/."
+                )
 
         if self.config.max_eval_samples_per_bench:
             examples = examples[:self.config.max_eval_samples_per_bench]

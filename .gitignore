@@ -72,6 +72,11 @@ runs/
 wandb/
 evaluation_results*.json
 
+# Per-item benchmark predictions (large, regenerated; commit code and REPORT.md only)
+results/**/predictions*.jsonl
+results/**/timing_predictions.jsonl
+results/**/general_predictions.jsonl
+
 # IDE & OS specific files
 .idea/
 .vscode/
