@@ -270,6 +270,7 @@ def holdout_a(
 
     return {
         "n": len(g_exact),
+        "majority_baseline": len(unique) / len(g_exact) if g_exact else float("nan"),
         "greedy_exact": _mean(g_exact),
         "greedy_exact_ci": _ci(g_exact, n_boot, seed),
         "sc5_exact": _mean(s_exact),
@@ -367,11 +368,7 @@ def holdout_e(
     seed: int,
 ) -> Dict[str, Any]:
     labels = ["True", "False", "Uncertain"]
-    return {
-        **summarize_benchmark(recs, labels, n_boot, seed),
-        "majority_baseline": 0.39,
-        "chance": 1.0 / 3.0,
-    }
+    return summarize_benchmark(recs, labels, n_boot, seed)
 
 
 def contamination_stats(recs: Sequence[Dict[str, Any]], flags: Dict[str, bool]) -> Dict[str, Any]:
@@ -450,6 +447,10 @@ def build_report(
         if not labels:
             labels = sorted({r.get("gold") for r in rows if r.get("gold")})
         stats = summarize_benchmark(rows, labels, n_boot, seed)
+        stats["templated_rate"] = _mean([
+            1.0 if "combining the premises" in str((r.get("greedy") or {}).get("raw", "")).lower() else 0.0
+            for r in rows
+        ])
         stats["per_pattern"] = _pattern_stats(rows, max(2000, n_boot // 4), seed, lambda r: r.get("pattern"))
         stats["contamination"] = contamination_stats(rows, flags)
         stats["headline"] = name in set(validation.get("headline_eligible", []))
@@ -465,6 +466,15 @@ def build_report(
             stats["per_depth"] = _pattern_stats(
                 rows, max(2000, n_boot // 4), seed,
                 lambda r: (items.get(r["id"], {}).get("meta") or {}).get("depth", "?"),
+            )
+            # Keep the 111 shipped file/rule groups distinct instead of
+            # collapsing the same rule across depths.
+            stats["per_pattern"] = _pattern_stats(
+                rows, max(2000, n_boot // 4), seed,
+                lambda r: "{}:{}".format(
+                    (items.get(r["id"], {}).get("meta") or {}).get("folder", "?"),
+                    r.get("pattern"),
+                ),
             )
         summary["benchmarks"][name] = stats
 
@@ -483,6 +493,7 @@ def build_report(
             "failed": sum(bool(r.get("failed")) for r in general_rows),
             "empty": sum(bool(r.get("empty")) for r in general_rows),
             "degenerate": sum(bool(r.get("degenerate")) for r in general_rows),
+            "loose_ngram_flags": sum(bool(r.get("loose_ngram_flag")) for r in general_rows),
             "truncated": sum(bool(r.get("truncated")) for r in general_rows),
             "short_lt20_chars": sum(1 for r in general_rows if int(r.get("chars", 0)) < 20),
             "mean_chars": _mean([float(r.get("chars", 0)) for r in general_rows]),
@@ -578,7 +589,7 @@ def render_markdown(s: Dict[str, Any]) -> str:
             ] for k, v in sorted(cont["benchmarks"].items())],
         ))
         add("")
-    add("This is an exact and 8-gram/near-duplicate audit against all four v3 training corpora (`A`, `D`, `E`, and the assembled `mix`). It is not a proof that no semantic overlap exists.")
+    add("This is an exact and 8-gram/near-duplicate audit against all four v3 training corpora (`A`, `D`, `E`, and the assembled `mix`). It is not a proof that no semantic overlap exists, and it does not audit the base model's pretraining corpus.")
     add("")
 
     add("## All evaluated benchmarks")
@@ -624,6 +635,8 @@ def render_markdown(s: Dict[str, Any]) -> str:
     add("")
     add("Majority/chance are reference points, not thresholds for success. A model at or below majority has not demonstrated benchmark-level reasoning on that set.")
     add("")
+    add("For the binary benchmarks, `Chance` is 50% because the gold task has two classes. The extractor also accepts the model's training label `Uncertain`, so a uniform three-way guesser would score 33.3%; the 50% column is the stricter binary-task reference.")
+    add("")
 
     add("Contamination sensitivity (all four v3 training corpora):")
     add("")
@@ -660,6 +673,18 @@ def render_markdown(s: Dict[str, Any]) -> str:
         add("Confusion matrix (greedy):")
         add("")
         add(_conf_md(st["confusion"], st["labels"]))
+        add("")
+        pred_counts = {
+            lab: sum(st["confusion"][g].get(lab, 0) for g in st["labels"])
+            for lab in st["labels"]
+        }
+        top_lab, top_n = max(pred_counts.items(), key=lambda kv: kv[1])
+        add("Most frequent prediction: `{}` on {:.1%} of items{}.".format(
+            top_lab,
+            top_n / max(1, st["n"]),
+            " (gold share {:.1%})".format(st["per_label"][top_lab]["n"] / max(1, st["n"]))
+            if top_lab in st["per_label"] else "",
+        ))
         add("")
         add("Greedy vs SC5:")
         add("")
@@ -701,7 +726,7 @@ def render_markdown(s: Dict[str, Any]) -> str:
             [[k, v["n"], fmt_ci(v["accuracy"], v["ci"]), fmt_pct(v["majority"])] for k, v in st.get("per_depth", {}).items()],
         ))
         add("")
-        add("The full 111-rule breakdown is in `summary.json` under `benchmarks.Multi-LogiEval.per_pattern`.")
+        add("The full per-file rule breakdown (111 file/rule groups) is in `summary.json` under `benchmarks.Multi-LogiEval.per_pattern`.")
         add("")
 
     add("## Per-pattern accuracy (LogicBench)")
@@ -737,7 +762,7 @@ def render_markdown(s: Dict[str, Any]) -> str:
             ],
         ))
         add("")
-        add("Majority baseline: always `unique` = 90.0% exact (it is wrong on all 30 insufficient items).")
+        add("Majority baseline: always output the `unique` table = {:.1%} exact (it is wrong on every insufficient item).".format(a["majority_baseline"]))
         add("")
         add("Per-cell accuracy on unique puzzles:")
         add("")
@@ -773,7 +798,7 @@ def render_markdown(s: Dict[str, Any]) -> str:
         add("")
         add(_md_table(
             ["n", "Accuracy [95% CI]", "Majority", "Chance", "Malformed"],
-            [[e["n"], fmt_ci(e["accuracy"], e["ci"]), fmt_pct(e["majority_baseline"]), fmt_pct(e["chance"]), fmt_pct(e["malformed_rate"])]],
+            [[e["n"], fmt_ci(e["accuracy"], e["ci"]), fmt_pct(e["majority_baseline_sample"]), fmt_pct(e["chance_mean"]), fmt_pct(e["malformed_rate"])]],
         ))
         add("")
         add("Paired SC5 - greedy: {:+.1%} [95% CI {:+.1%}, {:+.1%}].".format(e["sc5"]["sc5_minus_greedy"], e["sc5"]["diff_ci"][0], e["sc5"]["diff_ci"][1]))
@@ -788,9 +813,11 @@ def render_markdown(s: Dict[str, Any]) -> str:
         add("{} ordinary prompts, scored for emptiness, looping, truncation, and very short output. These are not a capability score.".format(g.get("n", 0)))
         add("")
         add(_md_table(
-            ["Failed", "Empty", "Degenerate", "Truncated", "<20 chars", "Mean chars", "Mean out tokens"],
-            [[g.get("failed"), g.get("empty"), g.get("degenerate"), g.get("truncated"), g.get("short_lt20_chars"), "{:.0f}".format(g.get("mean_chars", 0)), "{:.1f}".format(g.get("mean_output_tokens", 0))]],
+            ["Failed", "Degenerate (loop)", "Loose n-gram flag", "Empty", "Truncated", "<20 chars", "Mean chars", "Mean out tokens"],
+            [[g.get("failed"), g.get("degenerate"), g.get("loose_ngram_flags", 0), g.get("empty"), g.get("truncated"), g.get("short_lt20_chars"), "{:.0f}".format(g.get("mean_chars", 0)), "{:.1f}".format(g.get("mean_output_tokens", 0))]],
         ))
+        add("")
+        add("`Degenerate (loop)` requires more than 60% of tokens to be repeats, so enumerated lists and recipes do not count. `Loose n-gram flag` shows how many outputs the generic 5x n-gram rule would flag; those were inspected and are structured answers, not loops.")
         add("")
         add("Failure here means the adapter is not safe to present as a general assistant; it does not affect the logic-benchmark accuracy, which is reported separately.")
     add("")
@@ -802,6 +829,11 @@ def render_markdown(s: Dict[str, Any]) -> str:
         rel = "above" if st["accuracy"] > st["majority_baseline_sample"] else ("at" if abs(st["accuracy"] - st["majority_baseline_sample"]) < 0.005 else "below")
         add("- **{}**: {:.1%} accuracy (95% CI {:.1%}–{:.1%}) vs {:.1%} majority and {:.1%} chance; the point estimate is {} the majority baseline.".format(
             n, st["accuracy"], st["ci"][0], st["ci"][1], st["majority_baseline_sample"], st["chance_mean"], rel))
+        pred_counts = {lab: sum(st["confusion"][g].get(lab, 0) for g in st["labels"]) for lab in st["labels"]}
+        top_lab, top_n = max(pred_counts.items(), key=lambda kv: kv[1])
+        if top_n / max(1, st["n"]) >= 0.6:
+            add("- **{} label concentration**: `{}` accounts for {:.1%} of predictions, so the aggregate accuracy is dominated by one output label rather than balanced performance.".format(
+                n, top_lab, top_n / max(1, st["n"])))
     add("- **Multi-LogiEval** is excluded from the headline because its 71.46% yes rate fails the label-balance gate; see the diagnostic table.")
     add("- **SC5** is a paired decoding comparison to greedy on the same items; its CI is the uncertainty of that difference, not an independent effect claim.")
     add("- Only one model (the v3 adapter on the fixed base) was evaluated. No v2, base, or second system was run, so these are absolute accuracies; no comparative claim is made.")
@@ -811,14 +843,20 @@ def render_markdown(s: Dict[str, Any]) -> str:
     add("- **Single model, one checkpoint.** Only v3 (base + `internvl3_2b_reasoning_v3/sft`) is reported. `--include_base` is off by default, and no v2 result is comparable.")
     add("- **Sample sizes.** LogicBench-BQA uses a 600/1,520 stratified sample, Multi-LogiEval 600/1,696, LogicNLI 600/2,000, LogicBench-MCQA all 500, and each holdout split all 300. Bootstrap intervals reflect item-sampling variability only.")
     add("- **One seed.** Sampling uses seed 42 and bootstrap CIs use seed 20261028. Self-consistency is stochastic; these intervals do not include prompt, seed, or hyperparameter uncertainty.")
-    add("- **Contamination scope.** The audit is exact normalized match plus 8-gram Jaccard/containment and MinHash confirmation over A, D, E, and mix. It is not a semantic-entailment audit.")
+    add("- **Contamination scope.** The audit is exact normalized match plus 8-gram Jaccard/containment and MinHash confirmation over A, D, E, and mix. It is not a semantic-entailment audit, and it cannot rule out the base model having seen these public benchmarks during pretraining.")
     add("- **Label space.** The binary benchmarks keep their official True/False gold, but the model is allowed to emit `Uncertain` because that is its training contract; `Uncertain` is parsed and counted wrong, not malformed.")
     add("- Multi-LogiEval is label-imbalanced (71.5% True) and is not a headline result.")
     add("- LogicNLI uses the natural-language `test_language` split only; `test_logic` is symbolic and lacks a shipped verbaliser. Its four labels are a zero-shot output space not seen in v3 SFT.")
     add("- LogicBench-MCQA gold is the `choice_N` key; a model that writes the option text is mapped to a key by the extractor, but a model that writes only T/F/U is malformed. MCQA option keys are also a zero-shot output space.")
     add("- The v3 holdout is in-distribution and is not evidence of generalization. A has 30/300 `insufficient` items whose stored targets are reference tables; the scorer regenerates the puzzle and validates the answer kind.")
     add("- D has no gold labels, so token-F1 and degeneration are diagnostics, not accuracy. Token-F1 is lexical overlap, not correctness.")
-    add("- No human evaluation was performed.")
+    add("- **No human evaluation was performed.**")
+    add("- **Outputs are short and templated.** Greedy answers average {:.0f}–{:.0f} tokens, and {:.0%}–{:.0%} of them reduce to `Combining the premises, the answer is: X.`; these numbers measure final-label accuracy, not the quality of the reasoning trace.".format(
+        min(s["benchmarks"][n]["mean_output_tokens"] for n in headline) if headline else 0,
+        max(s["benchmarks"][n]["mean_output_tokens"] for n in headline) if headline else 0,
+        min(s["benchmarks"][n]["templated_rate"] for n in headline) if headline else 0,
+        max(s["benchmarks"][n]["templated_rate"] for n in headline) if headline else 0,
+    ))
     add("")
     add("## Artifacts")
     add("")

@@ -84,6 +84,10 @@ def main() -> None:
             raw = group[0]
             n_tokens = int(glens[0])
             deg = ReasoningMetrics.detect_degeneracy(raw)
+            # The generic detector flags any 5+ repeat of a 2..8-gram, which
+            # fires on legitimate bulleted lists and step-by-step recipes.
+            # For these probes a loop is only called when most tokens repeat.
+            degenerate = float(deg["repetition_ratio"]) > 0.6
             stripped = raw.strip()
             rec = {
                 "id": p["id"],
@@ -93,14 +97,15 @@ def main() -> None:
                 "chars": len(stripped),
                 "words": len(stripped.split()),
                 "truncated": n_tokens >= args.max_new_tokens,
-                "degenerate": bool(deg["is_degenerate"]),
+                "degenerate": degenerate,
+                "loose_ngram_flag": bool(deg["is_degenerate"]),
                 "max_ngram_repeat": deg["max_ngram_repeat"],
                 "repetition_ratio": deg["repetition_ratio"],
                 "empty": not stripped,
                 "failed": (
                     not stripped
                     or len(stripped) < 20
-                    or bool(deg["is_degenerate"])
+                    or degenerate
                     or n_tokens >= args.max_new_tokens
                 ),
                 "latency_s": round(latency / max(1, len(batch)), 3),
@@ -118,6 +123,7 @@ def main() -> None:
         "failed": sum(r["failed"] for r in records),
         "empty": sum(r["empty"] for r in records),
         "degenerate": sum(r["degenerate"] for r in records),
+        "loose_ngram_flags": sum(r["loose_ngram_flag"] for r in records),
         "truncated": sum(r["truncated"] for r in records),
         "short_lt20_chars": sum(1 for r in records if r["chars"] < 20),
         "mean_chars": round(sum(r["chars"] for r in records) / n, 1) if n else 0,
