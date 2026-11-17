@@ -1,0 +1,5 @@
+{
+  "evaluation_results_full_reproduced": false,
+  "results_baseline_reproduced": false,
+  "findings": "1. evaluation_results_full.json reported 100% on LogicBench and Multi-LogiEval and 0% on LogicNLI. Our audit reveals that the underlying legacy files under data/benchmarks/ contained single-label containers (LogicBench was 100% True, Multi-LogiEval was 100% True, LogicNLI was 100% Uncertain). Because the model collapsed to predicting 'True' for all inputs (a degenerate label prior), it trivially matched the 100% True benchmarks while scoring 0% on LogicNLI. On the canonical multi-label releases in data/benchmarks_real/, these numbers do not reproduce and are artifactual.\n2. results_baseline.json reported 0% across all benchmarks because the base model does not emit the expected <answer> XML tags without explicit in-context formatting or direct constrained generation."
+}

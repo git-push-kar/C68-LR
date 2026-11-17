@@ -1,0 +1,100 @@
+{
+  "thresholds": {
+    "ngram": 8,
+    "jaccard": 0.5,
+    "containment": 0.8,
+    "minhash_k": 64
+  },
+  "passes": {
+    "set_a_train": {
+      "n": 20000
+    },
+    "set_d_train": {
+      "n": 13913
+    },
+    "set_e_train": {
+      "n": 514769
+    },
+    "mix_train": {
+      "n": 72153
+    }
+  },
+  "benchmarks": {
+    "LogicBench-BQA": {
+      "n": 1520,
+      "contaminated": 0,
+      "contaminated_rate": 0.0,
+      "exact_matches": 0,
+      "items_with_any_shared_8gram": 0,
+      "max_jaccard": 0.0,
+      "max_containment": 0.0,
+      "top_matches": []
+    },
+    "LogicBench-MCQA": {
+      "n": 500,
+      "contaminated": 0,
+      "contaminated_rate": 0.0,
+      "exact_matches": 0,
+      "items_with_any_shared_8gram": 0,
+      "max_jaccard": 0.0,
+      "max_containment": 0.0,
+      "top_matches": []
+    },
+    "LogicNLI": {
+      "n": 2000,
+      "contaminated": 0,
+      "contaminated_rate": 0.0,
+      "exact_matches": 0,
+      "items_with_any_shared_8gram": 0,
+      "max_jaccard": 0.0,
+      "max_containment": 0.0,
+      "top_matches": []
+    },
+    "Multi-LogiEval": {
+      "n": 1696,
+      "contaminated": 0,
+      "contaminated_rate": 0.0,
+      "exact_matches": 0,
+      "items_with_any_shared_8gram": 1,
+      "max_jaccard": 0.0051,
+      "max_containment": 0.0204,
+      "top_matches": [
+        {
+          "item_id": "mle:d2_Data:pl:HS_MT:6",
+          "benchmark": "Multi-LogiEval",
+          "contaminated": false,
+          "exact_normalized_match": false,
+          "jaccard": 0.0051,
+          "containment": 0.0204,
+          "shared_8grams": 1,
+          "benchmark_8grams": 49,
+          "minhash_jaccard": 0.0156,
+          "corpus": "set_e_train",
+          "train_index": 323280,
+          "train_snippet": "- If people upgrade to the newest iPhone model every year, then they are not saving money for a down payment on a new house. - If people enjoy reading about tech specs and keeping up to date on the latest technology, then they upgrade to the newest iPhone model every year. - People either are saving"
+        }
+      ]
+    }
+  },
+  "provenance": {
+    "set_e_builder": "scripts/build_sft_mix.py:prepare_e()",
+    "set_e_sources": [
+      "data/processed/ProofWriter_train.jsonl",
+      "data/processed/FOLIO_train.jsonl"
+    ],
+    "corpora_scanned": [
+      "data/v3/A/train.jsonl",
+      "data/v3/D/train.jsonl",
+      "data/v3/E/train.jsonl",
+      "data/v3/mix/train.jsonl"
+    ],
+    "set_a_examples_scanned": 20000,
+    "set_d_examples_scanned": 13913,
+    "proofwriter_origin": "AI2 official ProofWriter archive (download_real_datasets.py)",
+    "folio_origin": "Yale-LILY/FOLIO GitHub v0.0 (download_real_datasets.py)",
+    "benchmark_downloads": "download_real_datasets.py fetches FOLIO, ProofWriter and AbductionRules only; it does not fetch LogicBench, Multi-LogiEval or LogicNLI. prepare_data.py writes small starter/placeholder benchmark files, not the real releases. The three real benchmark repositories were cloned separately under data/benchmarks_real/*/raw for this audit.",
+    "full_set_e_scan": true,
+    "set_e_examples_scanned": 514769
+  },
+  "verdict": "No benchmark item was derived from the v3 SFT corpora (A, D, E, or mix) by exact or near-duplicate content match."
+}

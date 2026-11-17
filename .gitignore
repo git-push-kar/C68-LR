@@ -48,6 +48,7 @@ datasets/
 
 # Keep benchmark folder tracked if needed
 data/benchmarks/
+data/benchmarks_real/
 
 # Local model copies produced by scripts/build_model_variants.py
 models/
@@ -66,8 +67,14 @@ checkpoints/
 *.gguf
 *.safetensors
 
+# Cache & Local Attachments
+.cache/
+.cloud-attachments/
+
 # Logs & Experiment Tracking
 *.log
+!logs/
+!logs/*.log
 runs/
 wandb/
 evaluation_results*.json
