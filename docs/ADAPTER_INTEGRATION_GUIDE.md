@@ -59,7 +59,7 @@ This document provides complete technical instructions, architectural patterns, 
 - **Rank ($r$):** 64
 - **Alpha ($\alpha$):** 128
 - **Scaling Factor ($s = \alpha / r$):** 2.0
-- **Trainable Parameters:** 59,768,832 (~3.8% of language model backbone)
+- **Trainable Parameters:** 73,859,072 (~4.16% of language model backbone; exactly 4x the 18,464,768 parameters of rank-16 adapters)
 - **Target Projections:** All 7 self-attention and MLP projection matrices in each transformer block.
 
 ---

@@ -88,7 +88,11 @@ where $A \in \mathbb{R}^{r \times d_{\text{in}}}$ is initialized from a Gaussian
 
 LoRA adapters are attached to all 7 linear projection matrices in every transformer layer:
 $$\text{Target Modules} = \{W_q, W_k, W_v, W_o, W_{\text{gate}}, W_{\text{up}}, W_{\text{down}}\}$$
-In the `v3_sft` adapter, setting $r=64$ and $\alpha=128$ introduces 59,768,832 trainable parameters (~3.8% of the language backbone) with scaling factor $s = \alpha / r = 2.0$.
+In the `v3_sft` adapter, setting $r=64$ and $\alpha=128$ introduces exactly **73,859,072 trainable parameters** (~4.16% of the 1.78B causal language backbone) across 392 weight matrices (28 layers $\times$ 7 target projections $\times$ 2 low-rank tensors), with scaling factor $s = \alpha / r = 2.0$. Per-layer parameter allocation breaks down as:
+- Attention Projections ($W_q, W_k, W_v, W_o$): $2 \times (64 \times 1536 + 1536 \times 64) + 2 \times (64 \times 1536 + 256 \times 64) = 622,592$ parameters per layer ($17,432,576$ across 28 layers), reflecting the Grouped-Query Attention key/value head dimension of $d_{\text{kv}} = 2 \times 128 = 256$.
+- MLP Projections ($W_{\text{gate}}, W_{\text{up}}, W_{\text{down}}$): $3 \times (64 \times 1536 + 8960 \times 64) = 2,015,232$ parameters per layer ($56,426,496$ across 28 layers) for intermediate dimension $d_{\text{ffn}} = 8960$.
+- Total per layer: $622,592 + 2,015,232 = 2,637,824$ parameters. For 28 layers: $28 \times 2,637,824 = \mathbf{73,859,072}$ parameters.
+(By comparison, the rank-16 curriculum adapters in Stages 1–3 contain exactly $\frac{73,859,072}{4} = 18,464,768$ trainable parameters).
 
 ### 2.4 Dynamic Unmerged Routing vs Weight Merging
 In a multi-adapter production system (Polyvalent), multiple domain-specific adapters exist simultaneously:
@@ -111,10 +115,12 @@ The v2 curriculum progressively structured logical learning from elementary rule
 - **Final LR LoRA:** Culmination of the sequential v2 curriculum across Stages 1, 2, and 3.
 
 ### 3.2 Reasoning-Repaired Mixture (v3 SFT Pipeline)
-The `v3_sft` checkpoint addresses formatting brittleness, tag repetition, and chat degradation discovered in v2. It is trained on a curated mixture ($r=64, \alpha=128$):
-1. **Set A (50% - Solver-Verified Puzzles):** Synthetically generated grid and ordering logic puzzles with certified unique solutions or certified "insufficient information" verdicts. All traces are verified with constraint satisfaction solvers.
-2. **Set D (20% - Dolly General Rehearsal):** General instruction-following samples from Databricks-Dolly-15k, preventing catastrophic forgetting of conversational capabilities.
-3. **Set E (30% - Cleaned FOL Proof Traces):** Filtered, verified natural-language FOL derivations from ProofWriter and FOLIO with compact rationale targets ($\le 338$ tokens).
+The `v3_sft` checkpoint addresses formatting brittleness, tag repetition, and chat degradation discovered in v2. The training mixture comprises **72,153 total examples** (~21,868,746 tokens/epoch) partitioned across three active sources:
+1. **Set A (27.72% / 20,000 items - Solver-Verified Puzzles):** Synthetically generated grid and ordering logic puzzles with certified unique solutions or certified "insufficient information" verdicts. All traces are verified with constraint satisfaction solvers to guarantee unambiguous deduction paths.
+2. **Set D (19.07% / 13,759 items - Dolly General Rehearsal):** General conversational instruction-following samples from Databricks-Dolly-15k, preventing catastrophic forgetting of foundational dialogue capabilities.
+3. **Set E (53.21% / 38,394 items - Cleaned FOL Proof Traces):** Filtered, verified natural-language FOL derivations from ProofWriter (38,318 items) and FOLIO (76 items) with compact rationale targets ($\le 338$ tokens).
+
+*Forensic Note on Mixture Allocation:* The initial nominal training recipe targeted a five-component mixture (A 45% / B 20% / C 10% / D 10% / E 15%). However, because Sets B and C (planned teacher rationales for ProofWriter and FOLIO/Abduction) required running vLLM which was unsupported natively on Windows and blocked under host WSL2 virtualization, Sets B and C were omitted from the final SFT run. The mixture sampler dynamically renormalized the target token budget across the available sets (A, D, and E), yielding the empirical **27.7% / 19.1% / 53.2%** (20,000 / 13,759 / 38,394) training distribution.
 
 ### 3.3 Loss Function & Assistant-Only Loss Masking
 Training applies cross-entropy loss strictly to the assistant's response tokens, completely masking out system and user prompt tokens. Critically, the end-of-sequence token $\langle|\text{im\_end}|\rangle$ is explicitly included in the supervised target:
